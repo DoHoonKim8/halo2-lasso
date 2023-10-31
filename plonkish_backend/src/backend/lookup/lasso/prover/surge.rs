@@ -160,21 +160,22 @@ impl<
             claimed_sum,
             transcript,
         )?;
-        let points = vec![x];
+
+        let points = vec![r.to_vec(), x];
         let pcs_query = Self::pcs_query(&expression, 0);
         let e_polys_offset = polys_offset + 1 + table.num_chunks() * 3;
         let evals = pcs_query
             .into_iter()
             .map(|query| {
+                transcript.write_field_element(&evals[query.poly()]).unwrap();
                 Evaluation::new(
                     e_polys_offset + query.poly(),
-                    points_offset,
+                    points_offset + 1,
                     evals[query.poly()],
                 )
             })
+            .chain([Evaluation::new(polys_offset, points_offset, claimed_sum)])
             .collect_vec();
-
-        transcript.write_field_elements(evals.iter().map(Evaluation::value))?;
 
         Ok((points, evals))
     }

@@ -35,6 +35,7 @@ impl<
         num_vars: usize,
         polys_offset: usize,
         points_offset: usize,
+        r: &[F],
         transcript: &mut impl FieldTranscriptRead<F>,
     ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
         let expression = Surge::<F, Pcs>::sum_check_expression(&table);
@@ -46,15 +47,16 @@ impl<
             claim,
             transcript,
         )?;
-        let points = vec![x];
+        let points = vec![r.to_vec(), x];
         let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
         let e_polys_offset = polys_offset + 1 + table.num_chunks() * 3;
         let evals = pcs_query
             .iter()
             .map(|query| {
                 let value = transcript.read_field_element().unwrap();
-                Evaluation::new(e_polys_offset + query.poly(), points_offset, value)
+                Evaluation::new(e_polys_offset + query.poly(), points_offset + 1, value)
             })
+            .chain([Evaluation::new(polys_offset, points_offset, claim)])
             .collect_vec();
 
         Ok((points, evals))

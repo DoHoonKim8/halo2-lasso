@@ -32,7 +32,7 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
         transcript: &mut impl FieldTranscriptRead<F>,
     ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
         let num_memories: usize = self.chunks.iter().map(|chunk| chunk.num_memories()).sum();
-        let memory_size = self.chunks[0].chunk_bits();
+        let memory_bits = self.chunks[0].chunk_bits();
         let (read_write_xs, x) = verify_grand_product(
             num_reads,
             iter::repeat(None).take(2 * num_memories),
@@ -41,7 +41,7 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
         let (read_xs, write_xs) = read_write_xs.split_at(num_memories);
 
         let (init_final_read_ys, y) = verify_grand_product(
-            memory_size,
+            memory_bits,
             iter::repeat(None).take(2 * num_memories),
             transcript,
         )?;

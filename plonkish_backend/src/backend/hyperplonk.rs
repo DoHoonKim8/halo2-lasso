@@ -321,7 +321,7 @@ where
                 memory_checking.opening_evals(
                     table.num_chunks(),
                     pp.lookup_polys_offset,
-                    lookup_points_offset + 1 + 2 * index,
+                    lookup_points_offset + 2 + 2 * index,
                 )
             })
             .collect_vec();
@@ -443,6 +443,7 @@ where
             vp.num_vars,
             vp.lookup_polys_offset,
             lookup_points_offset,
+            &r,
             transcript,
         )?;
 
@@ -461,7 +462,7 @@ where
                         lookup_table.num_chunks(),
                         vp.num_vars,
                         vp.lookup_polys_offset,
-                        lookup_points_offset + 1 + 2 * index,
+                        lookup_points_offset + 2 + 2 * index,
                         &beta,
                         &gamma,
                         transcript
