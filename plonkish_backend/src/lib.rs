@@ -1,4 +1,7 @@
 #![allow(clippy::op_ref)]
+#![feature(generic_const_exprs)]
+#![feature(map_first_last)]
+#![feature(int_log)]
 
 pub mod backend;
 pub mod frontend;

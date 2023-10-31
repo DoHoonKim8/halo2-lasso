@@ -11,13 +11,14 @@ use crate::{
 use std::{array, borrow::Cow, iter, mem};
 
 pub(super) fn batch_size<F: PrimeField>(circuit_info: &PlonkishCircuitInfo<F>) -> usize {
-    let num_lookups = circuit_info.lookups.len();
     let num_permutation_polys = circuit_info.permutation_polys().len();
     chain![
         [circuit_info.preprocess_polys.len() + circuit_info.permutation_polys().len()],
         circuit_info.num_witness_polys.clone(),
-        [num_lookups],
-        [num_lookups + div_ceil(num_permutation_polys, max_degree(circuit_info, None) - 1)],
+        [div_ceil(
+            num_permutation_polys,
+            max_degree(circuit_info, None) - 1
+        )],
     ]
     .sum()
 }
@@ -29,31 +30,22 @@ pub(super) fn compose<F: PrimeField>(
     let [beta, gamma, alpha] =
         &array::from_fn(|idx| Expression::<F>::Challenge(challenge_offset + idx));
 
-    let (lookup_constraints, lookup_zero_checks) = lookup_constraints(circuit_info, beta, gamma);
+    // To use Lasso as lookup argument, we will run Sumcheck for Lasso seperately
+    // Will generalize this function later
+    // let (lookup_constraints, lookup_zero_checks) = lookup_constraints(circuit_info, beta, gamma);
 
-    let max_degree = max_degree(circuit_info, Some(&lookup_constraints));
-    let (num_permutation_z_polys, permutation_constraints) = permutation_constraints(
-        circuit_info,
-        max_degree,
-        beta,
-        gamma,
-        2 * circuit_info.lookups.len(),
-    );
+    let max_degree = max_degree(circuit_info, None);
+    let (num_permutation_z_polys, permutation_constraints) =
+        permutation_constraints(circuit_info, max_degree, beta, gamma, 0);
 
     let expression = {
         let constraints = iter::empty()
             .chain(circuit_info.constraints.iter())
-            .chain(lookup_constraints.iter())
             .chain(permutation_constraints.iter())
             .collect_vec();
         let eq = Expression::eq_xy(0);
         let zero_check_on_every_row = Expression::distribute_powers(constraints, alpha) * eq;
-        Expression::distribute_powers(
-            iter::empty()
-                .chain(lookup_zero_checks.iter())
-                .chain(Some(&zero_check_on_every_row)),
-            alpha,
-        )
+        Expression::distribute_powers(iter::empty().chain(Some(&zero_check_on_every_row)), alpha)
     };
 
     (num_permutation_z_polys, expression)
@@ -63,19 +55,19 @@ pub(super) fn max_degree<F: PrimeField>(
     circuit_info: &PlonkishCircuitInfo<F>,
     lookup_constraints: Option<&[Expression<F>]>,
 ) -> usize {
-    let lookup_constraints = lookup_constraints.map(Cow::Borrowed).unwrap_or_else(|| {
-        let dummy_challenge = Expression::zero();
-        Cow::Owned(self::lookup_constraints(circuit_info, &dummy_challenge, &dummy_challenge).0)
-    });
+    // let lookup_constraints = lookup_constraints.map(Cow::Borrowed).unwrap_or_else(|| {
+    //     let dummy_challenge = Expression::zero();
+    //     Cow::Owned(self::lookup_constraints(circuit_info, &dummy_challenge, &dummy_challenge).0)
+    // });
     iter::empty()
         .chain(circuit_info.constraints.iter().map(Expression::degree))
-        .chain(lookup_constraints.iter().map(Expression::degree))
         .chain(circuit_info.max_degree)
         .chain(Some(2))
         .max()
         .unwrap()
 }
 
+// LogUp lookup_constraints
 pub(super) fn lookup_constraints<F: PrimeField>(
     circuit_info: &PlonkishCircuitInfo<F>,
     beta: &Expression<F>,

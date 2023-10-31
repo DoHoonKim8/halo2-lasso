@@ -21,6 +21,8 @@ use std::{
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod circuit;
+pub mod lookup;
+
 #[cfg(test)]
 mod test;
 
@@ -132,6 +134,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
                     .collect_vec()
             })
             .collect();
+        let lasso_lookups = vec![];
 
         let num_instances = instances.iter().map(Vec::len).collect_vec();
         let preprocess_polys =
@@ -155,6 +158,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
             num_challenges: num_by_phase(&cs.challenge_phase()),
             constraints,
             lookups,
+            lasso_lookups,
             permutations,
             max_degree: Some(cs.degree::<false>()),
         })

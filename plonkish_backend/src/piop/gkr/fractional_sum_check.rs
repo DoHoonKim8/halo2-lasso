@@ -4,9 +4,12 @@
 //! [PH23]: https://eprint.iacr.org/2023/1284.pdf
 
 use crate::{
-    piop::sum_check::{
-        classic::{ClassicSumCheck, EvaluationsProver},
-        evaluate, SumCheck as _, VirtualPolynomial,
+    piop::{
+        gkr::{err_unmatched_sum_check_output, eval_by_query},
+        sum_check::{
+            classic::{ClassicSumCheck, EvaluationsProver},
+            evaluate, SumCheck as _, VirtualPolynomial,
+        },
     },
     poly::{multilinear::MultilinearPolynomial, Polynomial},
     util::{
@@ -20,7 +23,7 @@ use crate::{
     },
     Error,
 };
-use std::{array, collections::HashMap, iter};
+use std::{array, iter};
 
 type SumCheck<F> = ClassicSumCheck<EvaluationsProver<F>>;
 
@@ -293,18 +296,6 @@ fn layer_down_claim<F: PrimeField>(evals: &[F], mu: F) -> (Vec<F>, Vec<F>) {
         .tuples()
         .map(|(&p_l, &p_r, &q_l, &q_r)| (p_l + mu * (p_r - p_l), q_l + mu * (q_r - q_l)))
         .unzip()
-}
-
-fn eval_by_query<F: PrimeField>(evals: &[F]) -> HashMap<Query, F> {
-    izip!(
-        (0..).map(|idx| Query::new(idx, Rotation::cur())),
-        evals.iter().cloned()
-    )
-    .collect()
-}
-
-fn err_unmatched_sum_check_output() -> Error {
-    Error::InvalidSumcheck("Unmatched between sum_check output and query evaluation".to_string())
 }
 
 #[cfg(test)]

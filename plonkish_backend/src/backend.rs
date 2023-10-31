@@ -11,12 +11,15 @@ use crate::{
 use rand::RngCore;
 use std::{collections::BTreeSet, fmt::Debug, iter};
 
+use self::lookup::lasso::DecomposableTable;
+
 pub mod hyperplonk;
+pub mod lookup;
 
 pub trait PlonkishBackend<F: Field>: Clone + Debug {
     type Pcs: PolynomialCommitmentScheme<F>;
-    type ProverParam: Clone + Debug + Serialize + DeserializeOwned;
-    type VerifierParam: Clone + Debug + Serialize + DeserializeOwned;
+    type ProverParam: Clone + Debug;
+    type VerifierParam: Clone + Debug;
 
     fn setup(
         circuit_info: &PlonkishCircuitInfo<F>,
@@ -43,7 +46,7 @@ pub trait PlonkishBackend<F: Field>: Clone + Debug {
     ) -> Result<(), Error>;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct PlonkishCircuitInfo<F> {
     /// 2^k is the size of the circuit
     pub k: usize,
@@ -64,6 +67,8 @@ pub struct PlonkishCircuitInfo<F> {
     /// which contains vector of tuples representing the input and table
     /// respectively.
     pub lookups: Vec<Vec<(Expression<F>, Expression<F>)>>,
+    /// Represents Lasso lookup argument, which contains input, indices, and table
+    pub lasso_lookups: Vec<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
     /// Each item inside outer vector repesents an closed permutation cycle,
     /// which contains vetor of tuples representing the polynomial index and
     /// row respectively.
