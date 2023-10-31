@@ -1,6 +1,5 @@
 #![allow(clippy::op_ref)]
 
-pub mod accumulation;
 pub mod backend;
 pub mod frontend;
 pub mod pcs;
