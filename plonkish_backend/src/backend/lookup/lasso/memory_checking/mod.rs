@@ -6,7 +6,6 @@ use std::iter;
 use halo2_curves::ff::PrimeField;
 use itertools::Itertools;
 pub use prover::MemoryCheckingProver;
-use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
 
 use crate::{
     poly::multilinear::MultilinearPolynomial,
@@ -18,7 +17,7 @@ use crate::{
 pub struct Chunk<F> {
     chunk_index: usize,
     chunk_bits: usize,
-    memory: Vec<Memory<F>>,
+    pub(crate) memory: Vec<Memory<F>>,
 }
 
 impl<F: PrimeField> Chunk<F> {
@@ -50,7 +49,10 @@ impl<F: PrimeField> Chunk<F> {
     }
 
     pub fn memory_indices(&self) -> Vec<usize> {
-        self.memory.iter().map(|memory| memory.memory_index).collect_vec()
+        self.memory
+            .iter()
+            .map(|memory| memory.memory_index)
+            .collect_vec()
     }
 
     /// check the following relations:
@@ -65,34 +67,27 @@ impl<F: PrimeField> Chunk<F> {
         init_ys: &[F],
         final_read_ys: &[F],
         y: &[F],
-        gamma: &F,
-        tau: &F,
+        hash: impl Fn(&F, &F, &F) -> F,
         transcript: &mut impl FieldTranscriptRead<F>,
     ) -> Result<(F, F, F, Vec<F>), Error> {
-        let hash = |a: &F, v: &F, t: &F| -> F { *a + *v * gamma + *t * gamma.square() - tau };
         let [dim_x, read_ts_poly_x, final_cts_poly_y] =
             transcript.read_field_elements(3)?.try_into().unwrap();
         let e_poly_xs = transcript.read_field_elements(self.num_memories())?;
+        let id_poly_y = inner_product(
+            iter::successors(Some(F::ONE), |power_of_two| Some(power_of_two.double()))
+                .take(y.len())
+                .collect_vec()
+                .iter(),
+            y,
+        );
         self.memory.iter().enumerate().for_each(|(i, memory)| {
             assert_eq!(read_xs[i], hash(&dim_x, &e_poly_xs[i], &read_ts_poly_x));
-
             assert_eq!(
                 write_xs[i],
                 hash(&dim_x, &e_poly_xs[i], &(read_ts_poly_x + F::ONE))
             );
-
-            let id_poly_y = inner_product(
-                iter::successors(Some(F::ONE), |power_of_two| Some(power_of_two.double()))
-                    .take(y.len())
-                    .collect_vec()
-                    .iter(),
-                y,
-            );
-
             let subtable_poly_y = memory.subtable_poly.evaluate(y);
-
             assert_eq!(init_ys[i], hash(&id_poly_y, &subtable_poly_y, &F::ZERO));
-
             assert_eq!(
                 final_read_ys[i],
                 hash(&id_poly_y, &subtable_poly_y, &final_cts_poly_y)

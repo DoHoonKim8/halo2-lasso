@@ -134,7 +134,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
                     .collect_vec()
             })
             .collect();
-        let lasso_lookups = vec![];
+        let lasso_lookup = vec![];
 
         let num_instances = instances.iter().map(Vec::len).collect_vec();
         let preprocess_polys =
@@ -158,7 +158,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
             num_challenges: num_by_phase(&cs.challenge_phase()),
             constraints,
             lookups,
-            lasso_lookups,
+            lasso_lookup,
             permutations,
             max_degree: Some(cs.degree::<false>()),
         })

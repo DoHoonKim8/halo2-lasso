@@ -3,17 +3,17 @@ use crate::{
         hyperplonk::{
             preprocessor::{batch_size, compose, permutation_polys},
             prover::{instance_polys, permutation_z_polys, prove_zero_check},
-            verifier::{pcs_query, points, verify_zero_check},
+            verifier::{pcs_query, verify_zero_check, zero_check_opening_points_len},
         },
         lookup::lasso::verifier::LassoVerifier,
         PlonkishBackend, PlonkishCircuit, PlonkishCircuitInfo, WitnessEncoding,
     },
-    pcs::{PolynomialCommitmentScheme, Evaluation},
+    pcs::{Evaluation, PolynomialCommitmentScheme},
     poly::multilinear::MultilinearPolynomial,
     util::{
-        arithmetic::{powers, BooleanHypercube, PrimeField},
+        arithmetic::{BooleanHypercube, PrimeField},
         end_timer,
-        expression::{Expression, Query},
+        expression::Expression,
         start_timer,
         transcript::{TranscriptRead, TranscriptWrite},
         DeserializeOwned, Itertools, Serialize,
@@ -23,10 +23,7 @@ use crate::{
 use rand::RngCore;
 use std::{fmt::Debug, hash::Hash, iter, marker::PhantomData};
 
-use super::lookup::lasso::{
-    prover::{LassoProver, Surge},
-    DecomposableTable, Lasso,
-};
+use super::lookup::lasso::{prover::LassoProver, DecomposableTable};
 
 pub(crate) mod preprocessor;
 pub(crate) mod prover;
@@ -49,8 +46,10 @@ where
     pub(crate) num_witness_polys: Vec<usize>,
     pub(crate) num_challenges: Vec<usize>,
     pub(crate) lookups: Vec<Vec<(Expression<F>, Expression<F>)>>,
-    pub(crate) lasso_lookups: Vec<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
+    /// assume we have Just One Lookup Table
+    pub(crate) lasso_lookup: (Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>),
     pub(crate) lookup_polys_offset: usize,
+    pub(crate) lookup_points_offset: usize,
     pub(crate) num_permutation_z_polys: usize,
     pub(crate) num_vars: usize,
     pub(crate) expression: Expression<F>,
@@ -70,8 +69,9 @@ where
     pub(crate) num_instances: Vec<usize>,
     pub(crate) num_witness_polys: Vec<usize>,
     pub(crate) num_challenges: Vec<usize>,
-    pub(crate) lasso_tables: Vec<Box<dyn DecomposableTable<F>>>,
+    pub(crate) lasso_table: Box<dyn DecomposableTable<F>>,
     pub(crate) lookup_polys_offset: usize,
+    pub(crate) lookup_points_offset: usize,
     pub(crate) num_permutation_z_polys: usize,
     pub(crate) num_vars: usize,
     pub(crate) expression: Expression<F>,
@@ -135,18 +135,17 @@ where
             + circuit_info.num_witness_polys.iter().sum::<usize>()
             + permutation_polys.len()
             + num_permutation_z_polys;
+        let lookup_points_offset = zero_check_opening_points_len(&expression, circuit_info.num_instances.len());
+        let lasso_lookup = &circuit_info.lasso_lookup[0];
 
         let vp = HyperPlonkVerifierParam {
             pcs: pcs_vp,
             num_instances: circuit_info.num_instances.clone(),
             num_witness_polys: circuit_info.num_witness_polys.clone(),
             num_challenges: circuit_info.num_challenges.clone(),
-            lasso_tables: circuit_info
-                .lasso_lookups
-                .iter()
-                .map(|(_, _, table)| table.clone())
-                .collect_vec(),
+            lasso_table: lasso_lookup.2.clone(),
             lookup_polys_offset,
+            lookup_points_offset,
             num_permutation_z_polys,
             num_vars,
             expression: expression.clone(),
@@ -163,8 +162,9 @@ where
             num_witness_polys: circuit_info.num_witness_polys.clone(),
             num_challenges: circuit_info.num_challenges.clone(),
             lookups: circuit_info.lookups.clone(),
-            lasso_lookups: circuit_info.lasso_lookups.clone(),
+            lasso_lookup: lasso_lookup.clone(),
             lookup_polys_offset,
+            lookup_points_offset,
             num_permutation_z_polys,
             num_vars,
             expression,
@@ -227,62 +227,48 @@ where
             .chain(witness_polys.iter())
             .collect_vec();
 
-        let (lookups, tables) = pp
-            .lasso_lookups
-            .iter()
-            .map(|(input, index, table)| ((input, index), table))
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-        let lookup_polys = Lasso::<F, Pcs>::lookup_polys(&polys, &lookups);
-        let (lookup_input_polys, lookup_nz_polys) =
-            lookup_polys.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
+        let (lookup, table) = ((&pp.lasso_lookup.0, &pp.lasso_lookup.1), &pp.lasso_lookup.2);
+        let (lookup_input_poly, lookup_nz_poly) =
+            LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
 
-        let lookup_input_poly = &lookup_input_polys[0];
-        let lookup_nz_poly = &lookup_nz_polys[0];
-        let table = tables[0];
         let num_vars = lookup_input_poly.num_vars();
         // why this is 3??
         let lookup_points_offset = 3;
-
-        // commit to input_poly
-        let lookup_input_comm = Pcs::commit_and_write(&pp.pcs, lookup_input_poly, transcript)?;
-
-        // get surge and dims
-        let mut surge = Surge::<F, Pcs>::new();
-
-        // commit to dims
-        let dims = surge.commit(&table, lookup_nz_poly);
-        let dim_comms = Pcs::batch_commit_and_write(&pp.pcs, &dims, transcript)?;
-
-        // Round n
-        // squeeze `r`
-        let r = transcript.squeeze_challenges(num_vars);
 
         // get subtable_polys
         let subtable_polys = table.subtable_polys();
         let subtable_polys = subtable_polys.iter().collect_vec();
         let subtable_polys = subtable_polys.as_slice();
 
-        // get e_polys & read_ts_polys & final_cts_polys
-        let e_polys = {
-            let nz = surge.nz();
-            LassoProver::<F, Pcs>::e_polys(subtable_polys, &table, &nz)
-        };
-        let (read_ts_polys, final_cts_polys) = surge.counter_polys(&table);
-
-        // commit to read_ts_polys & final_cts_polys & e_polys
-        let read_ts_comms = Pcs::batch_commit_and_write(&pp.pcs, &read_ts_polys, transcript)?;
-        let final_cts_comms = Pcs::batch_commit_and_write(&pp.pcs, &final_cts_polys, transcript)?;
-        let e_comms = Pcs::batch_commit_and_write(&pp.pcs, e_polys.as_slice(), transcript)?;
-
-        // Lasso Sumcheck
-        let (lookup_points, lookup_evals) = Surge::<F, Pcs>::prove_sum_check(
+        let (lookup_polys, lookup_comms) = LassoProver::<F, Pcs>::commit(
+            &pp.pcs,
+            pp.lookup_polys_offset,
             &table,
+            subtable_polys,
             lookup_input_poly,
-            e_polys.as_slice(),
+            &lookup_nz_poly,
+            transcript,
+        )?;
+
+        // Round n
+        // squeeze `r`
+        let r = transcript.squeeze_challenges(num_vars);
+
+        let (input_poly, dims, read_ts_polys, final_cts_polys, e_polys) = (
+            &lookup_polys[0][0],
+            &lookup_polys[1],
+            &lookup_polys[2],
+            &lookup_polys[3],
+            &lookup_polys[4],
+        );
+        // Lasso Sumcheck
+        let (lookup_points, lookup_evals) = LassoProver::<F, Pcs>::prove_sum_check(
+            lookup_points_offset,
+            &table,
+            input_poly,
+            &e_polys.iter().collect_vec(),
             &r,
             num_vars,
-            pp.lookup_polys_offset,
-            lookup_points_offset,
             transcript,
         )?;
 
@@ -291,39 +277,32 @@ where
         let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
 
         // memory_checking
-        let mut memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
-            &table,
-            &subtable_polys,
-            &e_polys,
-            &dims,
-            &read_ts_polys,
-            &final_cts_polys,
-            &beta,
-            &gamma,
-        );
+        let (mem_check_opening_points, mem_check_opening_evals) =
+            LassoProver::<F, Pcs>::memory_checking(
+                lookup_points_offset,
+                table,
+                subtable_polys,
+                dims,
+                read_ts_polys,
+                final_cts_polys,
+                e_polys,
+                &beta,
+                &gamma,
+                transcript,
+            )?;
 
-        memory_checking
-            .iter_mut()
-            .map(|memory_checking| memory_checking.prove_grand_product(transcript))
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        // for each memory_checking, prepare dims, e_polys, read_ts_polys and `x`
-        // for each memory_checking, prepare final_cts_polys and `y`
-        let mem_check_opening_points = memory_checking
+        let lookup_polys = lookup_polys
             .iter()
-            .flat_map(|memory_checking| memory_checking.opening_points())
+            .flat_map(|lookup_polys| lookup_polys.iter().map(|poly| &poly.poly).collect_vec())
             .collect_vec();
-
-        let mem_check_opening_evals = memory_checking
-            .iter()
-            .enumerate()
-            .flat_map(|(index, memory_checking)| {
-                memory_checking.opening_evals(
-                    table.num_chunks(),
-                    pp.lookup_polys_offset,
-                    lookup_points_offset + 2 + 2 * index,
-                )
-            })
+        let lookup_comms = lookup_comms.concat();
+        let lookup_opening_points = iter::empty()
+            .chain(lookup_points)
+            .chain(mem_check_opening_points)
+            .collect_vec();
+        let lookup_evals = iter::empty()
+            .chain(lookup_evals)
+            .chain(mem_check_opening_evals)
             .collect_vec();
 
         let timer = start_timer(|| format!("permutation_z_polys-{}", pp.permutation_polys.len()));
@@ -360,13 +339,7 @@ where
         )?;
 
         // PCS open
-        let polys = iter::empty()
-            .chain(polys)
-            .chain([lookup_input_poly])
-            .chain(dims.iter())
-            .chain(read_ts_polys.iter())
-            .chain(final_cts_polys.iter())
-            .chain(e_polys.iter());
+        let polys = iter::empty().chain(polys).chain(lookup_polys);
         let dummy_comm = Pcs::Commitment::default();
         let comms = iter::empty()
             .chain(iter::repeat(&dummy_comm).take(pp.num_instances.len()))
@@ -374,22 +347,13 @@ where
             .chain(&witness_comms)
             .chain(&pp.permutation_comms)
             .chain(&permutation_z_comms)
-            .chain([&lookup_input_comm])
-            .chain(dim_comms.iter())
-            .chain(read_ts_comms.iter())
-            .chain(final_cts_comms.iter())
-            .chain(e_comms.iter())
+            .chain(lookup_comms.iter())
             .collect_vec();
         let points = iter::empty()
             .chain(points)
-            .chain(lookup_points)
-            .chain(mem_check_opening_points)
+            .chain(lookup_opening_points)
             .collect_vec();
-        let evals = iter::empty()
-            .chain(evals)
-            .chain(lookup_evals)
-            .chain(mem_check_opening_evals)
-            .collect_vec();
+        let evals = iter::empty().chain(evals).chain(lookup_evals).collect_vec();
         let timer = start_timer(|| format!("pcs_batch_open-{}", evals.len()));
         Pcs::batch_open(&pp.pcs, polys, comms, &points, &evals, transcript)?;
         end_timer(timer);
@@ -421,22 +385,14 @@ where
             challenges.extend(transcript.squeeze_challenges(*num_challenges));
         }
 
+        let lookup_table = &vp.lasso_table;
         let lookup_points_offset = 3;
-        // read input_comm, dim_comms
-        let input_comm = Pcs::read_commitment(&vp.pcs, transcript)?;
-        let lasso_lookup_tables = &vp.lasso_tables;
-        let lookup_table = &lasso_lookup_tables[0];
-        let num_chunks = lookup_table.num_chunks();
-        let num_memories = lookup_table.num_memories();
-        let dim_comms = Pcs::read_commitments(&vp.pcs, num_chunks, transcript)?;
+
+        let lookup_comms =
+            LassoVerifier::<F, Pcs>::read_commitments(&vp.pcs, lookup_table, transcript)?;
 
         // Round n
         let r = transcript.squeeze_challenges(vp.num_vars);
-
-        // read read_ts_comms & final_cts_comms & e_comms
-        let read_ts_comms = Pcs::read_commitments(&vp.pcs, num_chunks, transcript)?;
-        let final_cts_comms = Pcs::read_commitments(&vp.pcs, num_chunks, transcript)?;
-        let e_comms = Pcs::read_commitments(&vp.pcs, num_memories, transcript)?;
 
         let (lookup_points, lookup_evals) = LassoVerifier::<F, Pcs>::verify_sum_check(
             lookup_table,
@@ -452,25 +408,23 @@ where
         let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
 
         // memory checking
-        let memory_checking = LassoVerifier::<F, Pcs>::prepare_memory_checking(lookup_table);
         let (mem_check_opening_points, mem_check_opening_evals) =
-            memory_checking
-                .iter()
-                .enumerate()
-                .map(|(index, memory_checking)| {
-                    memory_checking.verify_grand_product(
-                        lookup_table.num_chunks(),
-                        vp.num_vars,
-                        vp.lookup_polys_offset,
-                        lookup_points_offset + 2 + 2 * index,
-                        &beta,
-                        &gamma,
-                        transcript
-                    )
-                })
-                .collect::<Result<Vec<(Vec<Vec<F>>, Vec<Evaluation<F>>)>, Error>>()?
-                .into_iter()
-                .unzip::<_, _, Vec<_>, Vec<_>>();
+            LassoVerifier::<F, Pcs>::memory_checking(
+                vp.num_vars,
+                vp.lookup_polys_offset,
+                lookup_points_offset,
+                lookup_table,
+                &beta,
+                &gamma,
+                transcript,
+            )?;
+
+        let lookup_opening_points = iter::empty()
+            .chain(lookup_points)
+            .chain(mem_check_opening_points);
+        let lookup_evals = iter::empty()
+            .chain(lookup_evals)
+            .chain(mem_check_opening_evals);
 
         let permutation_z_comms =
             Pcs::read_commitments(&vp.pcs, vp.num_permutation_z_polys, transcript)?;
@@ -497,22 +451,13 @@ where
             .chain(&witness_comms)
             .chain(vp.permutation_comms.iter().map(|(_, comm)| comm))
             .chain(&permutation_z_comms)
-            .chain([&input_comm])
-            .chain(dim_comms.iter())
-            .chain(read_ts_comms.iter())
-            .chain(final_cts_comms.iter())
-            .chain(e_comms.iter())
+            .chain(lookup_comms.iter())
             .collect_vec();
         let points = iter::empty()
             .chain(points)
-            .chain(lookup_points)
-            .chain(mem_check_opening_points.concat())
+            .chain(lookup_opening_points)
             .collect_vec();
-        let evals = iter::empty()
-            .chain(evals)
-            .chain(lookup_evals)
-            .chain(mem_check_opening_evals.concat())
-            .collect_vec();
+        let evals = iter::empty().chain(evals).chain(lookup_evals).collect_vec();
         Pcs::batch_verify(&vp.pcs, comms, &points, &evals, transcript)?;
 
         Ok(())

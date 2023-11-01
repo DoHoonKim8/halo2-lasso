@@ -180,3 +180,19 @@ pub(crate) fn point_offset(pcs_query: &BTreeSet<Query>) -> HashMap<Rotation, usi
         },
     )
 }
+
+pub(super) fn zero_check_opening_points_len<F: PrimeField>(
+    expression: &Expression<F>,
+    num_instance_poly: usize,
+) -> usize {
+    let pcs_query = pcs_query(expression, num_instance_poly);
+    pcs_query
+        .iter()
+        .map(Query::rotation)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|rotation| {
+            1 << rotation.distance()
+        })
+        .sum()
+}

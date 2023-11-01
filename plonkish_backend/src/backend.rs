@@ -68,7 +68,7 @@ pub struct PlonkishCircuitInfo<F> {
     /// respectively.
     pub lookups: Vec<Vec<(Expression<F>, Expression<F>)>>,
     /// Represents Lasso lookup argument, which contains input, indices, and table
-    pub lasso_lookups: Vec<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
+    pub lasso_lookup: Vec<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
     /// Each item inside outer vector repesents an closed permutation cycle,
     /// which contains vetor of tuples representing the polynomial index and
     /// row respectively.

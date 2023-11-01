@@ -20,6 +20,8 @@ use crate::{
     Error,
 };
 
+use super::Poly;
+
 type SumCheck<F> = ClassicSumCheck<EvaluationsProver<F>>;
 
 pub struct Surge<
@@ -139,15 +141,16 @@ impl<
 
     pub fn prove_sum_check(
         table: &Box<dyn DecomposableTable<F>>,
-        input_poly: &MultilinearPolynomial<F>,
-        e_polys: &[MultilinearPolynomial<F>],
+        input_poly: &Poly<F>,
+        e_polys: &[&Poly<F>],
         r: &[F],
         num_vars: usize,
-        polys_offset: usize,
         points_offset: usize,
         transcript: &mut impl TranscriptWrite<CommitmentChunk<F, Pcs>, F>,
     ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
-        let claimed_sum = Self::sum_check_claim(&r, &table, input_poly, &e_polys);
+        let claimed_sum = Self::sum_check_claim(&r, &table, &e_polys);
+        assert_eq!(claimed_sum, input_poly.evaluate(r));
+
         transcript.write_field_element(&claimed_sum)?;
 
         let expression = Self::sum_check_expression(&table);
@@ -156,25 +159,35 @@ impl<
         let (x, evals) = SumCheck::prove(
             &(),
             num_vars,
-            VirtualPolynomial::new(&expression, e_polys, &[], &[r.to_vec()]),
+            VirtualPolynomial::new(
+                &expression,
+                e_polys.iter().map(|e_poly| &e_poly.poly),
+                &[],
+                &[r.to_vec()],
+            ),
             claimed_sum,
             transcript,
         )?;
 
         let points = vec![r.to_vec(), x];
         let pcs_query = Self::pcs_query(&expression, 0);
-        let e_polys_offset = polys_offset + 1 + table.num_chunks() * 3;
         let evals = pcs_query
             .into_iter()
             .map(|query| {
-                transcript.write_field_element(&evals[query.poly()]).unwrap();
+                transcript
+                    .write_field_element(&evals[query.poly()])
+                    .unwrap();
                 Evaluation::new(
-                    e_polys_offset + query.poly(),
+                    e_polys[query.poly()].offset,
                     points_offset + 1,
                     evals[query.poly()],
                 )
             })
-            .chain([Evaluation::new(polys_offset, points_offset, claimed_sum)])
+            .chain([Evaluation::new(
+                input_poly.offset,
+                points_offset,
+                claimed_sum,
+            )])
             .collect_vec();
 
         Ok((points, evals))
@@ -183,8 +196,7 @@ impl<
     pub fn sum_check_claim(
         r: &[F],
         table: &Box<dyn DecomposableTable<F>>,
-        input_poly: &MultilinearPolynomial<F>,
-        e_polys: &[MultilinearPolynomial<F>],
+        e_polys: &[&Poly<F>],
     ) -> F {
         let num_memories = table.num_memories();
         assert_eq!(e_polys.len(), num_memories);
@@ -199,7 +211,6 @@ impl<
                 eq[k] * table.combine_lookups(&operands)
             })
             .sum();
-        assert_eq!(input_poly.evaluate(r), claim);
 
         claim
     }

@@ -5,37 +5,34 @@ use itertools::{chain, Itertools};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    backend::lookup::lasso::prover::Chunk,
+    backend::lookup::lasso::prover::{Chunk, Point},
     pcs::Evaluation,
     piop::gkr::prove_grand_product,
-    poly::{multilinear::MultilinearPolynomial, Polynomial},
+    poly::multilinear::MultilinearPolynomial,
     util::transcript::FieldTranscriptWrite,
     Error,
 };
 
 use super::MemoryGKR;
 
-#[derive(Clone)]
 pub struct MemoryCheckingProver<'a, F: PrimeField> {
+    /// offset of MemoryCheckingProver instance opening points
+    points_offset: usize,
     /// chunks with the same bits size
     chunks: Vec<Chunk<'a, F>>,
     /// GKR initial polynomials for each memory
     memories: Vec<MemoryGKR<F>>,
     /// random point at which `read_write` polynomials opened
-    x: Vec<F>,
+    x: Point<F>,
     /// random point at which `init_final_read` polynomials opened
-    y: Vec<F>,
+    y: Point<F>,
 }
-
-// e_polys -> x (Lasso Sumcheck)
-// dims, e_polys, read_ts_polys -> x (for each MemoryChecking)
-// final_cts_polys -> y (for each MemoryChecking)
 
 impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
     // T_1[dim_1(x)], ..., T_k[dim_1(x)],
     // ...
     // T_{\alpha-k+1}[dim_c(x)], ..., T_{\alpha}[dim_c(x)]
-    pub fn new(chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
+    pub fn new(points_offset: usize, chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
         let num_reads = chunks[0].num_reads();
         let memory_size = 1 << chunks[0].chunk_bits();
 
@@ -81,10 +78,11 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             .collect();
 
         Self {
+            points_offset,
             chunks,
             memories: memories_gkr,
-            x: vec![],
-            y: vec![],
+            x: Point::default(),
+            y: Point::default(),
         }
     }
 
@@ -154,10 +152,10 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
         ])
     }
 
-    pub fn prove_grand_product(
+    pub fn prove(
         &mut self,
         transcript: &mut impl FieldTranscriptWrite<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
         let (_, x) = prove_grand_product(
             iter::repeat(None).take(self.memories.len() * 2),
             chain!(self.reads(), self.writes()),
@@ -177,44 +175,42 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             transcript.write_field_elements(&e_poly_xs).unwrap();
         });
 
-        self.x = x;
-        self.y = y;
+        self.x = Point {
+            offset: self.points_offset,
+            point: x,
+        };
+        self.y = Point {
+            offset: self.points_offset + 1,
+            point: y,
+        };
 
-        Ok(())
+        let opening_points = self.opening_points().collect_vec();
+        let opening_evals = self.opening_evals().collect_vec();
+
+        Ok((opening_points, opening_evals))
     }
 
     pub fn opening_points(&self) -> impl Iterator<Item = Vec<F>> {
-        chain!([self.x.clone(), self.y.clone()])
+        chain!([self.x.point.clone(), self.y.point.clone()])
     }
 
-    pub fn opening_evals(
-        &self,
-        num_chunks: usize,
-        polys_offset: usize,
-        points_offset: usize,
-    ) -> impl Iterator<Item = Evaluation<F>> {
+    pub fn opening_evals(&self) -> impl Iterator<Item = Evaluation<F>> {
         let (dim_xs, read_ts_poly_xs, final_cts_poly_xs, e_poly_xs) = self
             .chunks
             .iter()
             .map(|chunk| {
-                let chunk_poly_evals = chunk.chunk_poly_evals(&self.x, &self.y);
-                let chunk_polys_index = chunk.chunk_polys_index(polys_offset, num_chunks);
-                let e_poly_xs = chunk.e_poly_evals(&self.x);
-                let e_polys_offset = polys_offset + 1 + 3 * num_chunks;
+                let chunk_poly_evals = chunk.chunk_poly_evals(&self.x.point, &self.y.point);
+                let x = self.x.offset;
+                let y = self.y.offset;
+                let e_poly_xs = chunk.e_poly_evals(&self.x.point);
                 (
-                    Evaluation::new(chunk_polys_index[0], points_offset, chunk_poly_evals[0]),
-                    Evaluation::new(chunk_polys_index[1], points_offset, chunk_poly_evals[1]),
-                    Evaluation::new(chunk_polys_index[2], points_offset + 1, chunk_poly_evals[2]),
+                    Evaluation::new(chunk.dim.offset, x, chunk_poly_evals[0]),
+                    Evaluation::new(chunk.read_ts_poly.offset, x, chunk_poly_evals[1]),
+                    Evaluation::new(chunk.final_cts_poly.offset, y, chunk_poly_evals[2]),
                     chunk
                         .memories()
                         .enumerate()
-                        .map(|(i, memory)| {
-                            Evaluation::new(
-                                e_polys_offset + memory.memory_index(),
-                                points_offset,
-                                e_poly_xs[i],
-                            )
-                        })
+                        .map(|(i, memory)| Evaluation::new(memory.e_poly.offset, x, e_poly_xs[i]))
                         .collect_vec(),
                 )
             })

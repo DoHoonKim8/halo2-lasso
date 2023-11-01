@@ -1,32 +1,37 @@
 use std::{iter, marker::PhantomData};
 
 use halo2_curves::ff::PrimeField;
-use itertools::{Itertools, chain};
+use itertools::{chain, Itertools};
 
-use crate::{piop::gkr::verify_grand_product, util::transcript::FieldTranscriptRead, Error, pcs::Evaluation};
+use crate::{
+    pcs::Evaluation, piop::gkr::verify_grand_product, util::transcript::FieldTranscriptRead, Error,
+};
 
 use super::Chunk;
 
 #[derive(Clone, Debug)]
 pub struct MemoryCheckingVerifier<F: PrimeField> {
+    /// offset of MemoryCheckingProver instance opening points
+    points_offset: usize,
+    /// chunks with the same bits size
     chunks: Vec<Chunk<F>>,
     _marker: PhantomData<F>,
 }
 
 impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
-    pub fn new(chunks: Vec<Chunk<F>>) -> Self {
+    pub fn new(points_offset: usize, chunks: Vec<Chunk<F>>) -> Self {
         Self {
+            points_offset,
             chunks,
             _marker: PhantomData,
         }
     }
 
-    pub fn verify_grand_product(
+    pub fn verify(
         &self,
         num_chunks: usize,
         num_reads: usize,
         polys_offset: usize,
-        points_offset: usize,
         gamma: &F,
         tau: &F,
         transcript: &mut impl FieldTranscriptRead<F>,
@@ -47,6 +52,7 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
         )?;
         let (init_ys, final_read_ys) = init_final_read_ys.split_at(num_memories);
 
+        let hash = |a: &F, v: &F, t: &F| -> F { *a + *v * gamma + *t * gamma.square() - tau };
         let mut offset = 0;
         let (dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs) = self
             .chunks
@@ -59,8 +65,7 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
                     &init_ys[offset..offset + num_memories],
                     &final_read_ys[offset..offset + num_memories],
                     &y,
-                    gamma,
-                    tau,
+                    hash,
                     transcript,
                 );
                 offset += num_memories;
@@ -70,15 +75,16 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
             .into_iter()
             .multiunzip::<(Vec<_>, Vec<_>, Vec<_>, Vec<Vec<_>>)>();
 
-        let opening_evals = self.opening_evals(
-            num_chunks,
-            polys_offset,
-            points_offset,
-            &dim_xs,
-            &read_ts_poly_xs,
-            &final_cts_poly_ys,
-            &e_poly_xs.concat()
-        ).collect_vec();
+        let opening_evals = self
+            .opening_evals(
+                num_chunks,
+                polys_offset,
+                &dim_xs,
+                &read_ts_poly_xs,
+                &final_cts_poly_ys,
+                &e_poly_xs.concat(),
+            )
+            .collect_vec();
 
         Ok((vec![x, y], opening_evals))
     }
@@ -87,29 +93,28 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
         &self,
         num_chunks: usize,
         polys_offset: usize,
-        points_offset: usize,
         dim_xs: &[F],
         read_ts_poly_xs: &[F],
         final_cts_poly_ys: &[F],
         e_poly_xs: &[F],
     ) -> impl Iterator<Item = Evaluation<F>> {
-        let (dim_xs, read_ts_poly_xs, final_cts_poly_xs) = self
+        let (dim_xs, read_ts_poly_xs, final_cts_poly_ys) = self
             .chunks
             .iter()
             .enumerate()
             .map(|(i, chunk)| {
                 let chunk_polys_index = chunk.chunk_polys_index(polys_offset, num_chunks);
                 (
-                    Evaluation::new(chunk_polys_index[0], points_offset, dim_xs[i]),
-                    Evaluation::new(chunk_polys_index[1], points_offset, read_ts_poly_xs[i]),
-                    Evaluation::new(chunk_polys_index[2], points_offset + 1, final_cts_poly_ys[i]),
+                    Evaluation::new(chunk_polys_index[0], self.points_offset, dim_xs[i]),
+                    Evaluation::new(chunk_polys_index[1], self.points_offset, read_ts_poly_xs[i]),
+                    Evaluation::new(
+                        chunk_polys_index[2],
+                        self.points_offset + 1,
+                        final_cts_poly_ys[i],
+                    ),
                 )
             })
-            .multiunzip::<(
-                Vec<Evaluation<F>>,
-                Vec<Evaluation<F>>,
-                Vec<Evaluation<F>>,
-            )>();
+            .multiunzip::<(Vec<Evaluation<F>>, Vec<Evaluation<F>>, Vec<Evaluation<F>>)>();
 
         let e_poly_offset = polys_offset + 1 + 3 * num_chunks;
         let e_poly_xs = self
@@ -118,18 +123,9 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
             .flat_map(|chunk| chunk.memory_indices())
             .zip(e_poly_xs)
             .map(|(memory_index, &e_poly_x)| {
-                Evaluation::new(
-                    e_poly_offset + memory_index,
-                    points_offset,
-                    e_poly_x,
-                )
+                Evaluation::new(e_poly_offset + memory_index, self.points_offset, e_poly_x)
             })
             .collect_vec();
-        chain!(
-            dim_xs,
-            read_ts_poly_xs,
-            final_cts_poly_xs,
-            e_poly_xs
-        )
+        chain!(dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs)
     }
 }

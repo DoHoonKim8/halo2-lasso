@@ -1,56 +1,71 @@
 use std::{
-    collections::HashMap,
-    iter::{self, repeat},
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
 };
 
 use halo2_curves::ff::{Field, PrimeField};
-use itertools::{chain, izip, Itertools};
+use itertools::{chain, Itertools};
 
 use crate::{
     pcs::{CommitmentChunk, Evaluation, PolynomialCommitmentScheme},
-    piop::sum_check::{
-        classic::{ClassicSumCheck, EvaluationsProver},
-        SumCheck as _, VirtualPolynomial,
-    },
     poly::multilinear::MultilinearPolynomial,
-    util::transcript::TranscriptWrite,
+    util::{
+        arithmetic::BooleanHypercube,
+        expression::{CommonPolynomial, Expression},
+        impl_index,
+        parallel::parallelize,
+        transcript::{FieldTranscriptWrite, TranscriptWrite},
+    },
     Error,
 };
 
-use super::{memory_checking::MemoryCheckingProver, DecomposableTable, Lasso};
+use super::{memory_checking::MemoryCheckingProver, DecomposableTable};
 
 mod surge;
 
 pub use surge::Surge;
 
-type SumCheck<F> = ClassicSumCheck<EvaluationsProver<F>>;
-
+#[derive(Default)]
 pub struct Point<F: PrimeField> {
-    offset: usize,
-    point: Vec<F>,
+    /// point offset in batch opening
+    pub(crate) offset: usize,
+    pub(crate) point: Vec<F>,
 }
 
-#[derive(Clone)]
-pub struct Poly<'a, F: PrimeField> {
-    offset: usize,
-    poly: &'a MultilinearPolynomial<F>,
+#[derive(Clone, Debug)]
+pub struct Poly<F> {
+    /// polynomial offset in batch opening
+    pub(crate) offset: usize,
+    pub(crate) poly: MultilinearPolynomial<F>,
+}
+
+impl_index!(Poly, poly);
+
+impl<F: PrimeField> Poly<F> {
+    pub fn num_vars(&self) -> usize {
+        self.poly.num_vars()
+    }
+
+    pub fn evaluate(&self, x: &[F]) -> F {
+        self.poly.evaluate(x)
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Chunk<'a, F: PrimeField> {
-    chunk_index: usize,
-    dim: &'a MultilinearPolynomial<F>,
-    read_ts_poly: &'a MultilinearPolynomial<F>,
-    final_cts_poly: &'a MultilinearPolynomial<F>,
-    memories: Vec<Memory<'a, F>>,
+    pub(super) chunk_index: usize,
+    pub(super) dim: &'a Poly<F>,
+    pub(super) read_ts_poly: &'a Poly<F>,
+    pub(super) final_cts_poly: &'a Poly<F>,
+    pub(super) memories: Vec<Memory<'a, F>>,
 }
 
 impl<'a, F: PrimeField> Chunk<'a, F> {
     fn new(
         chunk_index: usize,
-        dim: &'a MultilinearPolynomial<F>,
-        read_ts_poly: &'a MultilinearPolynomial<F>,
-        final_cts_poly: &'a MultilinearPolynomial<F>,
+        dim: &'a Poly<F>,
+        read_ts_poly: &'a Poly<F>,
+        final_cts_poly: &'a Poly<F>,
         memory: Memory<'a, F>,
     ) -> Self {
         // sanity check
@@ -63,13 +78,6 @@ impl<'a, F: PrimeField> Chunk<'a, F> {
             final_cts_poly,
             memories: vec![memory],
         }
-    }
-
-    pub fn chunk_polys_index(&self, offset: usize, num_chunks: usize) -> Vec<usize> {
-        let dim_poly_index = offset + 1 + self.chunk_index;
-        let read_ts_poly_index = offset + 1 + num_chunks + self.chunk_index;
-        let final_cts_poly_index = offset + 1 + 2 * num_chunks + self.chunk_index;
-        vec![dim_poly_index, read_ts_poly_index, final_cts_poly_index]
     }
 
     pub fn chunk_index(&self) -> usize {
@@ -85,7 +93,11 @@ impl<'a, F: PrimeField> Chunk<'a, F> {
     }
 
     pub fn chunk_polys(&self) -> impl Iterator<Item = &'a MultilinearPolynomial<F>> {
-        chain!([self.dim, self.read_ts_poly, self.final_cts_poly])
+        chain!([
+            &self.dim.poly,
+            &self.read_ts_poly.poly,
+            &self.final_cts_poly.poly
+        ])
     }
 
     pub fn chunk_poly_evals(&self, x: &[F], y: &[F]) -> Vec<F> {
@@ -103,7 +115,7 @@ impl<'a, F: PrimeField> Chunk<'a, F> {
             .collect_vec()
     }
 
-    pub(super) fn memories(&self) -> impl Iterator<Item = &Memory<'a, F>> {
+    pub(super) fn memories(&self) -> impl Iterator<Item = &Memory<F>> {
         self.memories.iter()
     }
 
@@ -120,43 +132,81 @@ impl<'a, F: PrimeField> Chunk<'a, F> {
 
 #[derive(Clone, Debug)]
 pub(super) struct Memory<'a, F: PrimeField> {
-    memory_index: usize,
     subtable_poly: &'a MultilinearPolynomial<F>,
-    e_poly: &'a MultilinearPolynomial<F>,
+    pub(crate) e_poly: &'a Poly<F>,
 }
 
 impl<'a, F: PrimeField> Memory<'a, F> {
-    fn new(
-        memory_index: usize,
-        subtable_poly: &'a MultilinearPolynomial<F>,
-        e_poly: &'a MultilinearPolynomial<F>,
-    ) -> Self {
+    fn new(subtable_poly: &'a MultilinearPolynomial<F>, e_poly: &'a Poly<F>) -> Self {
         Self {
-            memory_index,
             subtable_poly,
             e_poly,
         }
     }
 
-    pub fn memory_index(&self) -> usize {
-        self.memory_index
-    }
-
-    pub fn e_poly(&self) -> &'a MultilinearPolynomial<F> {
-        self.e_poly
-    }
-
-    pub fn polys(&self) -> impl Iterator<Item = &'a MultilinearPolynomial<F>> {
-        chain!([self.subtable_poly, self.e_poly])
+    pub fn polys(&'a self) -> impl Iterator<Item = &'a MultilinearPolynomial<F>> {
+        chain!([&self.subtable_poly, &self.e_poly.poly])
     }
 }
 
 pub struct LassoProver<
     F: Field + PrimeField,
     Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
-> {
-    // Remove this
-    scheme: Lasso<F, Pcs>,
+>(PhantomData<F>, PhantomData<Pcs>);
+
+impl<
+        F: Field + PrimeField,
+        Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
+    > LassoProver<F, Pcs>
+{
+    pub fn lookup_poly(
+        lookup: &(&Expression<F>, &Expression<F>),
+        polys: &[&MultilinearPolynomial<F>],
+    ) -> (MultilinearPolynomial<F>, MultilinearPolynomial<F>) {
+        let num_vars = polys[0].num_vars();
+        let expression = lookup.0 + lookup.1;
+        let lagranges = {
+            let bh = BooleanHypercube::new(num_vars).iter().collect_vec();
+            expression
+                .used_langrange()
+                .into_iter()
+                .map(|i| (i, bh[i.rem_euclid(1 << num_vars) as usize]))
+                .collect::<HashSet<_>>()
+        };
+        let bh = BooleanHypercube::new(num_vars);
+
+        let evaluate = |expression: &Expression<F>| {
+            let mut evals = vec![F::ZERO; 1 << num_vars];
+            parallelize(&mut evals, |(evals, start)| {
+                for (b, eval) in (start..).zip(evals) {
+                    *eval = expression.evaluate(
+                        &|constant| constant,
+                        &|common_poly| match common_poly {
+                            CommonPolynomial::Identity => F::from(b as u64),
+                            CommonPolynomial::Lagrange(i) => {
+                                if lagranges.contains(&(i, b)) {
+                                    F::ONE
+                                } else {
+                                    F::ZERO
+                                }
+                            }
+                            CommonPolynomial::EqXY(_) => unreachable!(),
+                        },
+                        &|query| polys[query.poly()][bh.rotate(b, query.rotation())],
+                        &|_| unreachable!(),
+                        &|value| -value,
+                        &|lhs, rhs| lhs + &rhs,
+                        &|lhs, rhs| lhs * &rhs,
+                        &|value, scalar| value * &scalar,
+                    );
+                }
+            });
+            MultilinearPolynomial::new(evals)
+        };
+
+        let (input, index) = lookup;
+        (evaluate(input), evaluate(index))
+    }
 }
 
 impl<
@@ -164,9 +214,9 @@ impl<
         Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
     > LassoProver<F, Pcs>
 {
-    pub fn e_polys(
-        subtable_polys: &[&MultilinearPolynomial<F>],
+    fn e_polys(
         table: &Box<dyn DecomposableTable<F>>,
+        subtable_polys: &[&MultilinearPolynomial<F>],
         nz: &Vec<&[usize]>,
     ) -> Vec<MultilinearPolynomial<F>> {
         let num_chunks = table.num_chunks();
@@ -186,21 +236,21 @@ impl<
             .collect_vec()
     }
 
-    pub fn chunks<'a>(
+    fn chunks<'a>(
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &'a [&MultilinearPolynomial<F>],
-        e_polys: &'a [MultilinearPolynomial<F>],
-        dims: &'a [MultilinearPolynomial<F>],
-        read_ts_polys: &'a [MultilinearPolynomial<F>],
-        final_cts_polys: &'a [MultilinearPolynomial<F>],
+        dims: &'a [Poly<F>],
+        read_ts_polys: &'a [Poly<F>],
+        final_cts_polys: &'a [Poly<F>],
+        e_polys: &'a [Poly<F>],
     ) -> Vec<Chunk<'a, F>> {
         // key: chunk index, value: chunk
-        let mut chunk_map: HashMap<usize, Chunk<'a, F>> = HashMap::new();
+        let mut chunk_map: HashMap<usize, Chunk<F>> = HashMap::new();
 
         let num_memories = table.num_memories();
         let memories = (0..num_memories).map(|memory_index| {
             let subtable_poly = subtable_polys[table.memory_to_subtable_index(memory_index)];
-            Memory::new(memory_index, subtable_poly, &e_polys[memory_index])
+            Memory::new(subtable_poly, &e_polys[memory_index])
         });
         memories.enumerate().for_each(|(memory_index, memory)| {
             let chunk_index = table.memory_to_chunk_index(memory_index);
@@ -230,27 +280,48 @@ impl<
         chunks.into_iter().map(|(_, chunk)| chunk).collect_vec()
     }
 
-    pub fn prepare_memory_checking<'a>(
+    pub fn prove_sum_check(
+        points_offset: usize,
+        table: &Box<dyn DecomposableTable<F>>,
+        input_poly: &Poly<F>,
+        e_polys: &[&Poly<F>],
+        r: &[F],
+        num_vars: usize,
+        transcript: &mut impl TranscriptWrite<CommitmentChunk<F, Pcs>, F>,
+    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+        Surge::<F, Pcs>::prove_sum_check(
+            table,
+            input_poly,
+            &e_polys,
+            r,
+            num_vars,
+            points_offset,
+            transcript,
+        )
+    }
+
+    fn prepare_memory_checking<'a>(
+        points_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &'a [&MultilinearPolynomial<F>],
-        e_polys: &'a [MultilinearPolynomial<F>],
-        dims: &'a [MultilinearPolynomial<F>],
-        read_ts_polys: &'a [MultilinearPolynomial<F>],
-        final_cts_polys: &'a [MultilinearPolynomial<F>],
+        dims: &'a [Poly<F>],
+        read_ts_polys: &'a [Poly<F>],
+        final_cts_polys: &'a [Poly<F>],
+        e_polys: &'a [Poly<F>],
         gamma: &F,
         tau: &F,
     ) -> Vec<MemoryCheckingProver<'a, F>> {
         let chunks = Self::chunks(
             table,
             subtable_polys,
-            e_polys,
             dims,
             read_ts_polys,
             final_cts_polys,
+            e_polys,
         );
         let chunk_bits = table.chunk_bits();
         // key: chunk bits, value: chunks
-        let mut chunk_map: HashMap<usize, Vec<Chunk<'a, F>>> = HashMap::new();
+        let mut chunk_map: HashMap<usize, Vec<Chunk<F>>> = HashMap::new();
 
         chunks.iter().enumerate().for_each(|(chunk_index, chunk)| {
             let chunk_bits = chunk_bits[chunk_index];
@@ -265,7 +336,139 @@ impl<
 
         chunk_map
             .into_iter()
-            .map(|(_, chunks)| MemoryCheckingProver::new(chunks, tau, gamma))
+            .enumerate()
+            .map(|(index, (_, chunks))| {
+                let points_offset = points_offset + 2 + 2 * index;
+                MemoryCheckingProver::new(points_offset, chunks, tau, gamma)
+            })
             .collect_vec()
+    }
+
+    pub fn memory_checking<'a>(
+        points_offset: usize,
+        table: &Box<dyn DecomposableTable<F>>,
+        subtable_polys: &'a [&MultilinearPolynomial<F>],
+        dims: &'a [Poly<F>],
+        read_ts_polys: &'a [Poly<F>],
+        final_cts_polys: &'a [Poly<F>],
+        e_polys: &'a [Poly<F>],
+        gamma: &F,
+        tau: &F,
+        transcript: &mut impl FieldTranscriptWrite<F>,
+    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+        let mut memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
+            points_offset,
+            &table,
+            &subtable_polys,
+            &dims,
+            &read_ts_polys,
+            &final_cts_polys,
+            &e_polys,
+            &gamma,
+            &tau,
+        );
+
+        let (mem_check_opening_points, mem_check_opening_evals) = memory_checking
+            .iter_mut()
+            .map(|memory_checking| memory_checking.prove(transcript))
+            .collect::<Result<Vec<(Vec<Vec<F>>, Vec<Evaluation<F>>)>, Error>>()?
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        Ok((
+            mem_check_opening_points.concat(),
+            mem_check_opening_evals.concat(),
+        ))
+    }
+
+    pub fn commit(
+        pp: &Pcs::ProverParam,
+        lookup_polys_offset: usize,
+        table: &Box<dyn DecomposableTable<F>>,
+        subtable_polys: &[&MultilinearPolynomial<F>],
+        lookup_input_poly: MultilinearPolynomial<F>,
+        lookup_nz_poly: &MultilinearPolynomial<F>,
+        transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
+    ) -> Result<(Vec<Vec<Poly<F>>>, Vec<Vec<Pcs::Commitment>>), Error> {
+        let num_chunks = table.num_chunks();
+
+        // commit to input_poly
+        let lookup_input_comm = Pcs::commit_and_write(&pp, &lookup_input_poly, transcript)?;
+
+        // get surge and dims
+        let mut surge = Surge::<F, Pcs>::new();
+
+        // commit to dims
+        let dims = surge.commit(&table, lookup_nz_poly);
+        let dim_comms = Pcs::batch_commit_and_write(pp, &dims, transcript)?;
+
+        // get e_polys & read_ts_polys & final_cts_polys
+        let e_polys = {
+            let nz = surge.nz();
+            LassoProver::<F, Pcs>::e_polys(&table, subtable_polys, &nz)
+        };
+        let (read_ts_polys, final_cts_polys) = surge.counter_polys(&table);
+
+        // commit to read_ts_polys & final_cts_polys & e_polys
+        let read_ts_comms = Pcs::batch_commit_and_write(&pp, &read_ts_polys, transcript)?;
+        let final_cts_comms = Pcs::batch_commit_and_write(&pp, &final_cts_polys, transcript)?;
+        let e_comms = Pcs::batch_commit_and_write(&pp, e_polys.as_slice(), transcript)?;
+
+        let lookup_input_poly = Poly {
+            offset: lookup_polys_offset,
+            poly: lookup_input_poly,
+        };
+
+        let dims = dims
+            .into_iter()
+            .enumerate()
+            .map(|(chunk_index, dim)| Poly {
+                offset: lookup_polys_offset + 1 + chunk_index,
+                poly: dim,
+            })
+            .collect_vec();
+
+        let read_ts_polys = read_ts_polys
+            .into_iter()
+            .enumerate()
+            .map(|(chunk_index, read_ts_poly)| Poly {
+                offset: lookup_polys_offset + 1 + num_chunks + chunk_index,
+                poly: read_ts_poly,
+            })
+            .collect_vec();
+
+        let final_cts_polys = final_cts_polys
+            .into_iter()
+            .enumerate()
+            .map(|(chunk_index, final_cts_poly)| Poly {
+                offset: lookup_polys_offset + 1 + 2 * num_chunks + chunk_index,
+                poly: final_cts_poly,
+            })
+            .collect_vec();
+
+        let e_polys = e_polys
+            .into_iter()
+            .enumerate()
+            .map(|(memory_index, e_poly)| Poly {
+                offset: lookup_polys_offset + 1 + 3 * num_chunks + memory_index,
+                poly: e_poly,
+            })
+            .collect_vec();
+
+        Ok((
+            vec![
+                vec![lookup_input_poly],
+                dims,
+                read_ts_polys,
+                final_cts_polys,
+                e_polys,
+            ],
+            vec![
+                vec![lookup_input_comm],
+                dim_comms,
+                read_ts_comms,
+                final_cts_comms,
+                e_comms,
+            ],
+        ))
     }
 }

@@ -10,10 +10,7 @@ use crate::{
     },
     poly::{multilinear::MultilinearPolynomial, Polynomial},
     util::{
-        arithmetic::{
-            fe_from_le_bytes, fe_to_bits_le, inner_product, powers, usize_from_bits_le,
-            BooleanHypercube, PrimeField,
-        },
+        arithmetic::{fe_to_bits_le, usize_from_bits_le, BooleanHypercube, PrimeField},
         expression::{Expression, Query, Rotation},
         test::{rand_array, rand_idx, rand_vec},
         Itertools,
@@ -44,7 +41,7 @@ pub fn vanilla_plonk_circuit_info<F: PrimeField>(
         num_challenges: vec![0],
         constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
         lookups: vec![],
-        lasso_lookups: vec![],
+        lasso_lookup: vec![],
         permutations,
         max_degree: Some(4),
     }
@@ -82,7 +79,7 @@ pub fn vanilla_plonk_with_lookup_circuit_info<F: PrimeField>(
             (q_lookup * w_r, t_r.clone()),
             (q_lookup * w_o, t_o.clone()),
         ]],
-        lasso_lookups: vec![],
+        lasso_lookup: vec![],
         permutations,
         max_degree: Some(4),
     }
@@ -109,7 +106,7 @@ pub fn vanilla_plonk_with_lasso_lookup_circuit_info<F: PrimeField>(
         num_challenges: vec![0],
         constraints: vec![],
         lookups: vec![vec![]],
-        lasso_lookups: vec![(lasso_lookup_input, lasso_lookup_indices, lasso_table)],
+        lasso_lookup: vec![(lasso_lookup_input, lasso_lookup_indices, lasso_table)],
         permutations,
         max_degree: Some(4),
     }

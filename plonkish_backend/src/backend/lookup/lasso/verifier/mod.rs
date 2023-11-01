@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, iter, marker::PhantomData};
 
 use halo2_curves::ff::{Field, PrimeField};
 use itertools::Itertools;
@@ -10,7 +10,7 @@ use crate::{
         SumCheck,
     },
     poly::multilinear::MultilinearPolynomial,
-    util::transcript::FieldTranscriptRead,
+    util::transcript::{FieldTranscriptRead, TranscriptRead},
     Error,
 };
 
@@ -30,6 +30,30 @@ impl<
         Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
     > LassoVerifier<F, Pcs>
 {
+    pub fn read_commitments(
+        vp: &Pcs::VerifierParam,
+        table: &Box<dyn DecomposableTable<F>>,
+        transcript: &mut impl TranscriptRead<Pcs::CommitmentChunk, F>,
+    ) -> Result<Vec<Pcs::Commitment>, Error> {
+        // read input_comm, dim_comms
+        let num_chunks = table.num_chunks();
+        let num_memories = table.num_memories();
+        let input_comm = Pcs::read_commitment(vp, transcript)?;
+        let dim_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
+
+        // read read_ts_comms & final_cts_comms & e_comms
+        let read_ts_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
+        let final_cts_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
+        let e_comms = Pcs::read_commitments(vp, num_memories, transcript)?;
+        Ok(iter::empty()
+            .chain(vec![input_comm])
+            .chain(dim_comms)
+            .chain(read_ts_comms)
+            .chain(final_cts_comms)
+            .chain(e_comms)
+            .collect_vec())
+    }
+
     pub fn verify_sum_check(
         table: &Box<dyn DecomposableTable<F>>,
         num_vars: usize,
@@ -94,6 +118,7 @@ impl<
     }
 
     pub fn prepare_memory_checking<'a>(
+        points_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
     ) -> Vec<MemoryCheckingVerifier<F>> {
         let chunks = Self::chunks(table);
@@ -115,7 +140,42 @@ impl<
             });
         chunk_map
             .into_iter()
-            .map(|(_, chunks)| MemoryCheckingVerifier::new(chunks))
+            .enumerate()
+            .map(|(index, (_, chunks))| {
+                let points_offset = points_offset + 2 + 2 * index;
+                MemoryCheckingVerifier::new(points_offset, chunks)
+            })
             .collect_vec()
+    }
+
+    pub fn memory_checking(
+        num_reads: usize,
+        polys_offset: usize,
+        points_offset: usize,
+        table: &Box<dyn DecomposableTable<F>>,
+        gamma: &F,
+        tau: &F,
+        transcript: &mut impl FieldTranscriptRead<F>,
+    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+        let memory_checking = Self::prepare_memory_checking(points_offset, table);
+        let (mem_check_opening_points, mem_check_opening_evals) = memory_checking
+            .iter()
+            .map(|memory_checking| {
+                memory_checking.verify(
+                    table.num_chunks(),
+                    num_reads,
+                    polys_offset,
+                    &gamma,
+                    &tau,
+                    transcript,
+                )
+            })
+            .collect::<Result<Vec<(Vec<Vec<F>>, Vec<Evaluation<F>>)>, Error>>()?
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        Ok((
+            mem_check_opening_points.concat(),
+            mem_check_opening_evals.concat(),
+        ))
     }
 }
