@@ -232,8 +232,6 @@ where
             LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
 
         let num_vars = lookup_input_poly.num_vars();
-        // why this is 3??
-        let lookup_points_offset = 3;
 
         // get subtable_polys
         let subtable_polys = table.subtable_polys();
@@ -263,7 +261,7 @@ where
         );
         // Lasso Sumcheck
         let (lookup_points, lookup_evals) = LassoProver::<F, Pcs>::prove_sum_check(
-            lookup_points_offset,
+            pp.lookup_points_offset,
             &table,
             input_poly,
             &e_polys.iter().collect_vec(),
@@ -279,7 +277,7 @@ where
         // memory_checking
         let (mem_check_opening_points, mem_check_opening_evals) =
             LassoProver::<F, Pcs>::memory_checking(
-                lookup_points_offset,
+                pp.lookup_points_offset,
                 table,
                 subtable_polys,
                 dims,
@@ -386,7 +384,6 @@ where
         }
 
         let lookup_table = &vp.lasso_table;
-        let lookup_points_offset = 3;
 
         let lookup_comms =
             LassoVerifier::<F, Pcs>::read_commitments(&vp.pcs, lookup_table, transcript)?;
@@ -398,7 +395,7 @@ where
             lookup_table,
             vp.num_vars,
             vp.lookup_polys_offset,
-            lookup_points_offset,
+            vp.lookup_points_offset,
             &r,
             transcript,
         )?;
@@ -412,7 +409,7 @@ where
             LassoVerifier::<F, Pcs>::memory_checking(
                 vp.num_vars,
                 vp.lookup_polys_offset,
-                lookup_points_offset,
+                vp.lookup_points_offset,
                 lookup_table,
                 &beta,
                 &gamma,
