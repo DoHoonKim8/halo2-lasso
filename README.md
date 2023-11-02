@@ -6,4 +6,4 @@ The frontend is zcash/halo2 plonkish circuit structure.
 # Acknowledgements
 
 - Lasso paper (https://eprint.iacr.org/2023/1216.pdf)
-- Most part of HyperPlonk, multilinear KZG PCS implementation are ported from https://github.com/han0110/plonkish.git
+- This repo is originally the fork of https://github.com/han0110/plonkish.git . Most part of HyperPlonk, multilinear PCS implementation are based on here.
