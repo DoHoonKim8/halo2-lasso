@@ -1,6 +1,5 @@
 use crate::backend::{
     hyperplonk::{util, HyperPlonk},
-    lookup::logup::LogUp,
     test::run_plonkish_backend,
     PlonkishCircuit,
 };
@@ -9,7 +8,7 @@ use crate::{
     pcs::multilinear::MultilinearKzg,
     util::transcript::Keccak256Transcript,
 };
-use halo2_curves::bn256::{self, Bn256, Fr};
+use halo2_curves::bn256::{Bn256, Fr};
 use rand::rngs::OsRng;
 
 #[test]

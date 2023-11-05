@@ -11,23 +11,19 @@ use crate::{
         classic::{ClassicSumCheck, EvaluationsProver},
         SumCheck, VirtualPolynomial,
     },
-    poly::{multilinear::MultilinearPolynomial, Polynomial},
+    poly::multilinear::MultilinearPolynomial,
     util::{
-        arithmetic::{div_ceil, steps_by, sum, BatchInvert, BooleanHypercube, PrimeField},
+        arithmetic::{div_ceil, steps_by, BatchInvert, BooleanHypercube, PrimeField},
         end_timer,
-        expression::{CommonPolynomial, Expression, Rotation},
-        parallel::{num_threads, par_map_collect, parallelize, parallelize_iter},
+        expression::{Expression, Rotation},
+        parallel::{par_map_collect, parallelize},
         start_timer,
         transcript::FieldTranscriptWrite,
         Itertools,
     },
     Error,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    iter,
-};
+use std::iter;
 
 pub(crate) fn instance_polys<'a, F: PrimeField>(
     num_vars: usize,

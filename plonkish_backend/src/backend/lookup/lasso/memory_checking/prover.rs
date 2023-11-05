@@ -5,7 +5,7 @@ use itertools::{chain, Itertools};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    backend::lookup::lasso::prover::{Chunk, Point},
+    backend::lookup::lasso::prover::Chunk,
     pcs::Evaluation,
     piop::gkr::prove_grand_product,
     poly::multilinear::MultilinearPolynomial,
@@ -22,10 +22,6 @@ pub struct MemoryCheckingProver<'a, F: PrimeField> {
     chunks: Vec<Chunk<'a, F>>,
     /// GKR initial polynomials for each memory
     memories: Vec<MemoryGKR<F>>,
-    /// random point at which `read_write` polynomials opened
-    x: Point<F>,
-    /// random point at which `init_final_read` polynomials opened
-    y: Point<F>,
 }
 
 impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
@@ -81,8 +77,6 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             points_offset,
             chunks,
             memories: memories_gkr,
-            x: Point::default(),
-            y: Point::default(),
         }
     }
 
@@ -168,49 +162,27 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             transcript,
         )?;
 
-        self.chunks.iter().for_each(|chunk| {
-            let chunk_poly_evals = chunk.chunk_poly_evals(&x, &y);
-            let e_poly_xs = chunk.e_poly_evals(&x);
-            transcript.write_field_elements(&chunk_poly_evals).unwrap();
-            transcript.write_field_elements(&e_poly_xs).unwrap();
-        });
-
-        self.x = Point {
-            offset: self.points_offset,
-            point: x,
-        };
-        self.y = Point {
-            offset: self.points_offset + 1,
-            point: y,
-        };
-
-        let opening_points = self.opening_points().collect_vec();
-        let opening_evals = self.opening_evals().collect_vec();
-
-        Ok((opening_points, opening_evals))
-    }
-
-    pub fn opening_points(&self) -> impl Iterator<Item = Vec<F>> {
-        chain!([self.x.point.clone(), self.y.point.clone()])
-    }
-
-    pub fn opening_evals(&self) -> impl Iterator<Item = Evaluation<F>> {
         let (dim_xs, read_ts_poly_xs, final_cts_poly_xs, e_poly_xs) = self
             .chunks
             .iter()
             .map(|chunk| {
-                let chunk_poly_evals = chunk.chunk_poly_evals(&self.x.point, &self.y.point);
-                let x = self.x.offset;
-                let y = self.y.offset;
-                let e_poly_xs = chunk.e_poly_evals(&self.x.point);
+                let chunk_poly_evals = chunk.chunk_poly_evals(&x, &y);
+                let e_poly_xs = chunk.e_poly_evals(&x);
+                transcript.write_field_elements(&chunk_poly_evals).unwrap();
+                transcript.write_field_elements(&e_poly_xs).unwrap();
+
+                let x_offset = self.points_offset;
+                let y_offset = x_offset + 1;
                 (
-                    Evaluation::new(chunk.dim.offset, x, chunk_poly_evals[0]),
-                    Evaluation::new(chunk.read_ts_poly.offset, x, chunk_poly_evals[1]),
-                    Evaluation::new(chunk.final_cts_poly.offset, y, chunk_poly_evals[2]),
+                    Evaluation::new(chunk.dim.offset, x_offset, chunk_poly_evals[0]),
+                    Evaluation::new(chunk.read_ts_poly.offset, x_offset, chunk_poly_evals[1]),
+                    Evaluation::new(chunk.final_cts_poly.offset, y_offset, chunk_poly_evals[2]),
                     chunk
                         .memories()
                         .enumerate()
-                        .map(|(i, memory)| Evaluation::new(memory.e_poly.offset, x, e_poly_xs[i]))
+                        .map(|(i, memory)| {
+                            Evaluation::new(memory.e_poly.offset, x_offset, e_poly_xs[i])
+                        })
                         .collect_vec(),
                 )
             })
@@ -220,11 +192,16 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
                 Vec<Evaluation<F>>,
                 Vec<Vec<Evaluation<F>>>,
             )>();
-        chain!(
+
+        let opening_points = vec![x, y];
+        let opening_evals = chain!(
             dim_xs,
             read_ts_poly_xs,
             final_cts_poly_xs,
             e_poly_xs.concat()
         )
+        .collect_vec();
+
+        Ok((opening_points, opening_evals))
     }
 }

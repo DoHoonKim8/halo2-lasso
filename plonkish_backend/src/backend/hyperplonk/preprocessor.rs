@@ -8,7 +8,7 @@ use crate::{
         Itertools,
     },
 };
-use std::{array, borrow::Cow, iter, mem};
+use std::{array, iter, mem};
 
 pub(super) fn batch_size<F: PrimeField>(circuit_info: &PlonkishCircuitInfo<F>) -> usize {
     let num_permutation_polys = circuit_info.permutation_polys().len();

@@ -191,8 +191,6 @@ pub(super) fn zero_check_opening_points_len<F: PrimeField>(
         .map(Query::rotation)
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .map(|rotation| {
-            1 << rotation.distance()
-        })
+        .map(|rotation| 1 << rotation.distance())
         .sum()
 }

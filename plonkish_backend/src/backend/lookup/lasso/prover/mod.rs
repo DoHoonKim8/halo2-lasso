@@ -25,13 +25,6 @@ mod surge;
 
 pub use surge::Surge;
 
-#[derive(Default)]
-pub struct Point<F: PrimeField> {
-    /// point offset in batch opening
-    pub(crate) offset: usize,
-    pub(crate) point: Vec<F>,
-}
-
 #[derive(Clone, Debug)]
 pub struct Poly<F> {
     /// polynomial offset in batch opening
@@ -254,7 +247,7 @@ impl<
         });
         memories.enumerate().for_each(|(memory_index, memory)| {
             let chunk_index = table.memory_to_chunk_index(memory_index);
-            if let Some(_) = chunk_map.get(&chunk_index) {
+            if chunk_map.get(&chunk_index).is_some() {
                 chunk_map.entry(chunk_index).and_modify(|chunk| {
                     chunk.add_memory(memory);
                 });

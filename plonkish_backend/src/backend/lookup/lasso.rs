@@ -1,23 +1,10 @@
-use std::{collections::HashSet, fmt::Debug, iter, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData};
 
 use halo2_curves::ff::{Field, PrimeField};
-use itertools::Itertools;
 
 use crate::{
-    backend::lookup::lasso::prover::Surge,
-    pcs::{CommitmentChunk, Evaluation, PolynomialCommitmentScheme},
-    piop::sum_check::{
-        classic::{ClassicSumCheck, EvaluationsProver},
-        SumCheck,
-    },
-    poly::multilinear::MultilinearPolynomial,
-    util::{
-        arithmetic::BooleanHypercube,
-        expression::{CommonPolynomial, Expression},
-        parallel::parallelize,
-        transcript::{FieldTranscriptRead, TranscriptWrite},
-    },
-    Error,
+    pcs::PolynomialCommitmentScheme, poly::multilinear::MultilinearPolynomial,
+    util::expression::Expression,
 };
 
 pub mod memory_checking;

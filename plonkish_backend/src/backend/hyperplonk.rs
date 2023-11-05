@@ -3,12 +3,12 @@ use crate::{
         hyperplonk::{
             preprocessor::{batch_size, compose, permutation_polys},
             prover::{instance_polys, permutation_z_polys, prove_zero_check},
-            verifier::{pcs_query, verify_zero_check, zero_check_opening_points_len},
+            verifier::{verify_zero_check, zero_check_opening_points_len},
         },
         lookup::lasso::verifier::LassoVerifier,
         PlonkishBackend, PlonkishCircuit, PlonkishCircuitInfo, WitnessEncoding,
     },
-    pcs::{Evaluation, PolynomialCommitmentScheme},
+    pcs::PolynomialCommitmentScheme,
     poly::multilinear::MultilinearPolynomial,
     util::{
         arithmetic::{BooleanHypercube, PrimeField},

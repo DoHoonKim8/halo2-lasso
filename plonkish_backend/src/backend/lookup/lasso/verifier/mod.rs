@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    memory_checking::{verifier::MemoryCheckingVerifier, Chunk, Memory},
+    memory_checking::verifier::{MemoryCheckingVerifier, Chunk, Memory},
     prover::Surge,
     DecomposableTable,
 };
@@ -64,7 +64,7 @@ impl<
     ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
         let expression = Surge::<F, Pcs>::sum_check_expression(&table);
         let claim = transcript.read_field_element()?;
-        let (eval, x) = ClassicSumCheck::<EvaluationsProver<_>>::verify(
+        let (_, x) = ClassicSumCheck::<EvaluationsProver<_>>::verify(
             &(),
             num_vars,
             expression.degree(),
@@ -97,7 +97,7 @@ impl<
             let chunk_bits = chunk_bits[chunk_index];
             let subtable_poly = &subtable_polys[table.memory_to_subtable_index(memory_index)];
             let memory = Memory::new(memory_index, subtable_poly.clone());
-            if let Some(_) = chunk_map.get(&chunk_index) {
+            if chunk_map.get(&chunk_index).is_some() {
                 chunk_map.entry(chunk_index).and_modify(|chunk| {
                     chunk.add_memory(memory);
                 });
@@ -117,7 +117,7 @@ impl<
         chunks.into_iter().map(|(_, chunk)| chunk).collect_vec()
     }
 
-    pub fn prepare_memory_checking<'a>(
+    fn prepare_memory_checking(
         points_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
     ) -> Vec<MemoryCheckingVerifier<F>> {
@@ -130,7 +130,7 @@ impl<
             .enumerate()
             .for_each(|(chunk_index, chunk)| {
                 let chunk_bits = chunk_bits[chunk_index];
-                if let Some(_) = chunk_map.get(&chunk_bits) {
+                if chunk_map.get(&chunk_bits).is_some() {
                     chunk_map.entry(chunk_bits).and_modify(|chunks| {
                         chunks.push(chunk);
                     });

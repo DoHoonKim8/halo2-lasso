@@ -11,11 +11,11 @@ use crate::{
         classic::{ClassicSumCheck, EvaluationsProver},
         SumCheck as _, VirtualPolynomial,
     },
-    poly::{multilinear::MultilinearPolynomial, Polynomial},
+    poly::multilinear::MultilinearPolynomial,
     util::{
         arithmetic::{fe_to_bits_le, usize_from_bits_le},
         expression::{Expression, Query, Rotation},
-        transcript::{FieldTranscriptRead, TranscriptWrite},
+        transcript::TranscriptWrite,
     },
     Error,
 };

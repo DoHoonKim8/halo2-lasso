@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::{
     poly::multilinear::MultilinearPolynomial,
     util::{
-        arithmetic::{inner_product, powers, split_bits},
+        arithmetic::{inner_product, split_bits},
         expression::Expression,
     },
 };
