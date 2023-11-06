@@ -35,6 +35,10 @@ pub trait DecomposableTable<F: PrimeField>: Debug + Sync + DecomposableTableClon
     /// Each chunk can have different bits.
     fn chunk_bits(&self) -> Vec<usize>;
 
+    /// Returns the indices of each subtable lookups
+    /// The length of `index_bits` is same as actual bit length of table index
+    fn subtable_indices(&self, index_bits: Vec<bool>) -> Vec<Vec<bool>>;
+
     fn memory_to_subtable_index(&self, memory_index: usize) -> usize;
 
     fn memory_to_chunk_index(&self, memory_index: usize) -> usize;

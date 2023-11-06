@@ -53,18 +53,6 @@ impl<
             .collect_vec()
     }
 
-    fn split_by_chunk_bits(bits: &[bool], chunk_bits: &[usize]) -> Vec<Vec<bool>> {
-        let mut offset = 0;
-        let mut chunked_bits = vec![];
-        chunk_bits.iter().for_each(|chunk_bits| {
-            let mut chunked = vec![true; *chunk_bits];
-            chunked.copy_from_slice(&bits[offset..offset + chunk_bits]);
-            chunked_bits.push(chunked);
-            offset = offset + chunk_bits;
-        });
-        chunked_bits
-    }
-
     /// computes dim_1, ..., dim_c where c == DecomposableTable::C
     pub fn commit(
         &mut self,
@@ -73,13 +61,14 @@ impl<
     ) -> Vec<MultilinearPolynomial<F>> {
         let num_rows: usize = 1 << nz_poly.num_vars();
         let num_chunks = table.num_chunks();
-        let chunk_bits = table.chunk_bits();
         // get indices of non-zero columns of all rows where each index is chunked
         let indices = (0..num_rows)
             .map(|i| {
-                let index_bits = fe_to_bits_le(nz_poly[i]);
+                let mut index_bits = fe_to_bits_le(nz_poly[i]);
+                index_bits.truncate(table.chunk_bits().iter().sum());
+
                 let mut chunked_index = repeat(0).take(num_chunks).collect_vec();
-                let chunked_index_bits = Self::split_by_chunk_bits(&index_bits, &chunk_bits);
+                let chunked_index_bits = table.subtable_indices(index_bits);
                 chunked_index
                     .iter_mut()
                     .zip(chunked_index_bits)
