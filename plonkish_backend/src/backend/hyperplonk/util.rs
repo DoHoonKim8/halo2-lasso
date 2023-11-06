@@ -93,8 +93,11 @@ pub fn vanilla_plonk_with_lasso_lookup_circuit_info<F: PrimeField>(
 ) -> PlonkishCircuitInfo<F> {
     let [pi, q_l, q_r, q_m, q_o, q_c, q_lookup, t_l, t_r, t_o, w_l, w_r, w_o] =
         &array::from_fn(|poly| Query::new(poly, Rotation::cur())).map(Expression::<F>::Polynomial);
-    let lasso_lookup_input = w_l.clone();
-    let lasso_lookup_indices = w_r.clone();
+    let lasso_lookup_input = w_o.clone();
+    let lasso_lookup_indices = Expression::DistributePowers(
+        vec![w_l.clone(), w_r.clone()],
+        Box::new(Expression::Constant(F::from_u128(1 << 64))),
+    );
     let lasso_table = Box::new(AndTable::<F>::new());
     let chunk_bits = lasso_table.chunk_bits();
     let num_vars = chunk_bits.iter().chain([&num_vars]).max().unwrap();
@@ -373,24 +376,10 @@ pub fn rand_vanilla_plonk_with_lasso_lookup_circuit<F: PrimeField>(
     for poly in [10, 11, 12] {
         permutation.copy((poly, 1), (poly, 1));
     }
-    let and_table = AndTable::<F>::new();
-    let subtable_poly = &and_table.subtable_polys()[0];
     for idx in 0..size - 1 {
-        let (w_l, w_r) = {
-            let index = witness_rng.next_u64();
-            let index_bits = fe_to_bits_le(F::from(index));
-            assert_eq!(usize_from_bits_le(&index_bits) as u64, index);
-            let operands = index_bits[..64]
-                .chunks(16)
-                .map(|chunked_index_bits| {
-                    let chunked_index = usize_from_bits_le(chunked_index_bits);
-                    subtable_poly[chunked_index]
-                })
-                .collect_vec();
-            let value = and_table.combine_lookups(&operands);
-            (value, F::from(index))
-        };
-        let values = vec![(10, w_l), (11, w_r)];
+        let [w_l, w_r] = [(); 2].map(|_| witness_rng.next_u64());
+        let w_o = w_l & w_r;
+        let values = vec![(10, F::from(w_l)), (11, F::from(w_r)), (12, F::from(w_o))];
         for (poly, value) in values {
             polys[poly][idx] = value;
         }

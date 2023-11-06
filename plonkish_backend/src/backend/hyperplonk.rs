@@ -135,7 +135,8 @@ where
             + circuit_info.num_witness_polys.iter().sum::<usize>()
             + permutation_polys.len()
             + num_permutation_z_polys;
-        let lookup_points_offset = zero_check_opening_points_len(&expression, circuit_info.num_instances.len());
+        let lookup_points_offset =
+            zero_check_opening_points_len(&expression, circuit_info.num_instances.len());
         let lasso_lookup = &circuit_info.lasso_lookup[0];
 
         let vp = HyperPlonkVerifierParam {

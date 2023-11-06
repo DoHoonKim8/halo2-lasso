@@ -220,6 +220,18 @@ pub fn split_bits(item: usize, num_bits: usize) -> (usize, usize) {
     (high_chunk, low_chunk)
 }
 
+pub fn split_by_chunk_bits(bits: &[bool], chunk_bits: &[usize]) -> Vec<Vec<bool>> {
+    let mut offset = 0;
+    let mut chunked_bits = vec![];
+    chunk_bits.iter().for_each(|chunk_bits| {
+        let mut chunked = vec![true; *chunk_bits];
+        chunked.copy_from_slice(&bits[offset..offset + chunk_bits]);
+        chunked_bits.push(chunked);
+        offset = offset + chunk_bits;
+    });
+    chunked_bits
+}
+
 #[cfg(test)]
 mod test {
     use crate::util::arithmetic;

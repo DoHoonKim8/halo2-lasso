@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    memory_checking::verifier::{MemoryCheckingVerifier, Chunk, Memory},
+    memory_checking::verifier::{Chunk, Memory, MemoryCheckingVerifier},
     prover::Surge,
     DecomposableTable,
 };

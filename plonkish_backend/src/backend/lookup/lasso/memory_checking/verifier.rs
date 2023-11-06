@@ -4,7 +4,11 @@ use halo2_curves::ff::PrimeField;
 use itertools::{chain, Itertools};
 
 use crate::{
-    pcs::Evaluation, piop::gkr::verify_grand_product, util::{transcript::FieldTranscriptRead, arithmetic::inner_product}, Error, poly::multilinear::MultilinearPolynomial,
+    pcs::Evaluation,
+    piop::gkr::verify_grand_product,
+    poly::multilinear::MultilinearPolynomial,
+    util::{arithmetic::inner_product, transcript::FieldTranscriptRead},
+    Error,
 };
 
 #[derive(Clone, Debug)]

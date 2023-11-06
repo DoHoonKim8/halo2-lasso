@@ -5,12 +5,8 @@ use itertools::{chain, Itertools};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    backend::lookup::lasso::prover::Chunk,
-    pcs::Evaluation,
-    piop::gkr::prove_grand_product,
-    poly::multilinear::MultilinearPolynomial,
-    util::transcript::FieldTranscriptWrite,
-    Error,
+    backend::lookup::lasso::prover::Chunk, pcs::Evaluation, piop::gkr::prove_grand_product,
+    poly::multilinear::MultilinearPolynomial, util::transcript::FieldTranscriptWrite, Error,
 };
 
 use super::MemoryGKR;
