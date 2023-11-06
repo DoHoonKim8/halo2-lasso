@@ -4,7 +4,7 @@ use crate::{
             preprocessor::{compose, permutation_polys},
             prover::{instance_polys, permutation_z_polys},
         },
-        lookup::lasso::{test::AndTable, DecomposableTable},
+        lookup::lasso::{test::and::AndTable, DecomposableTable},
         mock::MockCircuit,
         PlonkishCircuit, PlonkishCircuitInfo,
     },

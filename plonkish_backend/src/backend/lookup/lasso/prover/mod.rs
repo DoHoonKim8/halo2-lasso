@@ -212,7 +212,7 @@ impl<
         subtable_polys: &[&MultilinearPolynomial<F>],
         nz: &Vec<&[usize]>,
     ) -> Vec<MultilinearPolynomial<F>> {
-        let num_chunks = table.num_chunks();
+        let num_chunks = table.chunk_bits().len();
         let num_memories = table.num_memories();
         assert_eq!(nz.len(), num_chunks);
         let num_reads = nz[0].len();
@@ -264,7 +264,7 @@ impl<
 
         // sanity check
         {
-            let num_chunks = table.num_chunks();
+            let num_chunks = table.chunk_bits().len();
             assert_eq!(chunk_map.len(), num_chunks);
         }
 
@@ -382,7 +382,7 @@ impl<
         lookup_nz_poly: &MultilinearPolynomial<F>,
         transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
     ) -> Result<(Vec<Vec<Poly<F>>>, Vec<Vec<Pcs::Commitment>>), Error> {
-        let num_chunks = table.num_chunks();
+        let num_chunks = table.chunk_bits().len();
 
         // commit to input_poly
         let lookup_input_comm = Pcs::commit_and_write(&pp, &lookup_input_poly, transcript)?;

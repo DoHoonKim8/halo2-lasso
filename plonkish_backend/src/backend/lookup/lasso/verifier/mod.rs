@@ -36,7 +36,7 @@ impl<
         transcript: &mut impl TranscriptRead<Pcs::CommitmentChunk, F>,
     ) -> Result<Vec<Pcs::Commitment>, Error> {
         // read input_comm, dim_comms
-        let num_chunks = table.num_chunks();
+        let num_chunks = table.chunk_bits().len();
         let num_memories = table.num_memories();
         let input_comm = Pcs::read_commitment(vp, transcript)?;
         let dim_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
@@ -73,7 +73,7 @@ impl<
         )?;
         let points = vec![r.to_vec(), x];
         let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
-        let e_polys_offset = polys_offset + 1 + table.num_chunks() * 3;
+        let e_polys_offset = polys_offset + 1 + table.chunk_bits().len() * 3;
         let evals = pcs_query
             .iter()
             .map(|query| {
@@ -108,7 +108,7 @@ impl<
 
         // sanity check
         {
-            let num_chunks = table.num_chunks();
+            let num_chunks = table.chunk_bits().len();
             assert_eq!(chunk_map.len(), num_chunks);
         }
 
@@ -162,7 +162,7 @@ impl<
             .iter()
             .map(|memory_checking| {
                 memory_checking.verify(
-                    table.num_chunks(),
+                    table.chunk_bits().len(),
                     num_reads,
                     polys_offset,
                     &gamma,

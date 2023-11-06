@@ -19,8 +19,6 @@ pub trait Subtable<F: PrimeField> {
 /// This is a trait that contains information about decomposable table to which
 /// backend prover and verifier can ask
 pub trait DecomposableTable<F: PrimeField>: Debug + Sync + DecomposableTableClone<F> {
-    fn num_chunks(&self) -> usize;
-
     fn num_memories(&self) -> usize;
 
     /// Returns multilinear extension polynomials of each subtable

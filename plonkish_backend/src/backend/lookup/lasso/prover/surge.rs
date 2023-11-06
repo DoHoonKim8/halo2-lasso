@@ -60,7 +60,7 @@ impl<
         nz_poly: &MultilinearPolynomial<F>,
     ) -> Vec<MultilinearPolynomial<F>> {
         let num_rows: usize = 1 << nz_poly.num_vars();
-        let num_chunks = table.num_chunks();
+        let num_chunks = table.chunk_bits().len();
         // get indices of non-zero columns of all rows where each index is chunked
         let indices = (0..num_rows)
             .map(|i| {
@@ -102,7 +102,7 @@ impl<
         &self,
         table: &Box<dyn DecomposableTable<F>>,
     ) -> (Vec<MultilinearPolynomial<F>>, Vec<MultilinearPolynomial<F>>) {
-        let num_chunks = table.num_chunks();
+        let num_chunks = table.chunk_bits().len();
         let mut read_ts_polys = Vec::with_capacity(num_chunks);
         let mut final_cts_polys = Vec::with_capacity(num_chunks);
         let chunk_bits = table.chunk_bits();
