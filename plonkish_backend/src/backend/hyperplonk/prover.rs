@@ -4,9 +4,10 @@ use crate::{
             verifier::{pcs_query, point_offset, points},
             HyperPlonk,
         },
+        lookup::lasso::prover::LassoProver,
         WitnessEncoding,
     },
-    pcs::Evaluation,
+    pcs::{Evaluation, PolynomialCommitmentScheme},
     piop::sum_check::{
         classic::{ClassicSumCheck, EvaluationsProver},
         SumCheck, VirtualPolynomial,
@@ -18,12 +19,14 @@ use crate::{
         expression::{Expression, Rotation},
         parallel::{par_map_collect, parallelize},
         start_timer,
-        transcript::FieldTranscriptWrite,
+        transcript::{FieldTranscriptWrite, TranscriptWrite},
         Itertools,
     },
     Error,
 };
 use std::iter;
+
+use super::HyperPlonkProverParam;
 
 pub(crate) fn instance_polys<'a, F: PrimeField>(
     num_vars: usize,
@@ -200,4 +203,108 @@ pub(crate) fn prove_sum_check<F: PrimeField>(
     transcript.write_field_elements(evals.iter().map(Evaluation::value))?;
 
     Ok((points(&pcs_query, &x), evals))
+}
+
+pub(super) fn prove_lookup<
+    F: PrimeField,
+    Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
+>(
+    pp: &HyperPlonkProverParam<F, Pcs>,
+    polys: &[&MultilinearPolynomial<F>],
+    transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
+) -> Result<
+    (
+        Vec<MultilinearPolynomial<F>>,
+        Vec<Pcs::Commitment>,
+        Vec<Vec<F>>,
+        Vec<Evaluation<F>>,
+        Vec<F>,
+    ),
+    Error,
+> {
+    if pp.lasso_lookup.is_none() {
+        return Ok((vec![], vec![], vec![], vec![], vec![]));
+    }
+    let lasso_lookup = pp.lasso_lookup.as_ref().unwrap();
+    let (lookup, table) = ((&lasso_lookup.0, &lasso_lookup.1), &lasso_lookup.2);
+    let (lookup_input_poly, lookup_nz_poly) = LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
+
+    let num_vars = lookup_input_poly.num_vars();
+
+    // get subtable_polys
+    let subtable_polys = table.subtable_polys();
+    let subtable_polys = subtable_polys.iter().collect_vec();
+    let subtable_polys = subtable_polys.as_slice();
+
+    let (lookup_polys, lookup_comms) = LassoProver::<F, Pcs>::commit(
+        &pp.pcs,
+        pp.lookup_polys_offset,
+        &table,
+        subtable_polys,
+        lookup_input_poly,
+        &lookup_nz_poly,
+        transcript,
+    )?;
+
+    // Round n
+    // squeeze `r`
+    let r = transcript.squeeze_challenges(num_vars);
+
+    let (input_poly, dims, read_ts_polys, final_cts_polys, e_polys) = (
+        &lookup_polys[0][0],
+        &lookup_polys[1],
+        &lookup_polys[2],
+        &lookup_polys[3],
+        &lookup_polys[4],
+    );
+    // Lasso Sumcheck
+    let (lookup_points, lookup_evals) = LassoProver::<F, Pcs>::prove_sum_check(
+        pp.lookup_points_offset,
+        &table,
+        input_poly,
+        &e_polys.iter().collect_vec(),
+        &r,
+        num_vars,
+        transcript,
+    )?;
+
+    // squeeze memory checking challenges -> we will reuse beta, gamma for memory checking of Lasso
+    // Round n+1
+    let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
+
+    // memory_checking
+    let (mem_check_opening_points, mem_check_opening_evals) =
+        LassoProver::<F, Pcs>::memory_checking(
+            pp.lookup_points_offset,
+            table,
+            subtable_polys,
+            dims,
+            read_ts_polys,
+            final_cts_polys,
+            e_polys,
+            &beta,
+            &gamma,
+            transcript,
+        )?;
+
+    let lookup_polys = lookup_polys
+        .into_iter()
+        .flat_map(|lookup_polys| lookup_polys.into_iter().map(|poly| poly.poly).collect_vec())
+        .collect_vec();
+    let lookup_comms = lookup_comms.concat();
+    let lookup_opening_points = iter::empty()
+        .chain(lookup_points)
+        .chain(mem_check_opening_points)
+        .collect_vec();
+    let lookup_evals = iter::empty()
+        .chain(lookup_evals)
+        .chain(mem_check_opening_evals)
+        .collect_vec();
+    Ok((
+        lookup_polys,
+        lookup_comms,
+        lookup_opening_points,
+        lookup_evals,
+        vec![beta, gamma],
+    ))
 }

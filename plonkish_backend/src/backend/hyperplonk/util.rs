@@ -41,7 +41,7 @@ pub fn vanilla_plonk_circuit_info<F: PrimeField>(
         num_challenges: vec![0],
         constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
         lookups: vec![],
-        lasso_lookup: vec![],
+        lasso_lookup: None,
         permutations,
         max_degree: Some(4),
     }
@@ -79,7 +79,7 @@ pub fn vanilla_plonk_with_lookup_circuit_info<F: PrimeField>(
             (q_lookup * w_r, t_r.clone()),
             (q_lookup * w_o, t_o.clone()),
         ]],
-        lasso_lookup: vec![],
+        lasso_lookup: None,
         permutations,
         max_degree: Some(4),
     }

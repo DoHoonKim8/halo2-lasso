@@ -1,19 +1,25 @@
 use crate::{
-    pcs::Evaluation,
+    backend::lookup::lasso::verifier::LassoVerifier,
+    pcs::{Evaluation, PolynomialCommitmentScheme},
     piop::sum_check::{
         classic::{ClassicSumCheck, EvaluationsProver},
         evaluate, lagrange_eval, SumCheck,
     },
-    poly::multilinear::{rotation_eval, rotation_eval_points},
+    poly::multilinear::{rotation_eval, rotation_eval_points, MultilinearPolynomial},
     util::{
         arithmetic::{inner_product, BooleanHypercube, PrimeField},
         expression::{Expression, Query, Rotation},
-        transcript::FieldTranscriptRead,
+        transcript::{FieldTranscriptRead, TranscriptRead},
         Itertools,
     },
     Error,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
+
+use super::HyperPlonkVerifierParam;
 
 #[allow(clippy::type_complexity)]
 pub(super) fn verify_zero_check<F: PrimeField>(
@@ -193,4 +199,70 @@ pub(super) fn zero_check_opening_points_len<F: PrimeField>(
         .into_iter()
         .map(|rotation| 1 << rotation.distance())
         .sum()
+}
+
+pub(super) fn verify_lookup<
+    F: PrimeField,
+    Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
+>(
+    vp: &HyperPlonkVerifierParam<F, Pcs>,
+    transcript: &mut impl TranscriptRead<Pcs::CommitmentChunk, F>,
+) -> Result<
+    (
+        Vec<Pcs::Commitment>,
+        Vec<Vec<F>>,
+        Vec<Evaluation<F>>,
+        Vec<F>,
+    ),
+    Error,
+> {
+    if vp.lasso_table.is_none() {
+        return Ok((vec![], vec![], vec![], vec![]));
+    }
+    let lookup_table = vp.lasso_table.as_ref().unwrap();
+
+    let lookup_comms =
+        LassoVerifier::<F, Pcs>::read_commitments(&vp.pcs, lookup_table, transcript)?;
+
+    // Round n
+    let r = transcript.squeeze_challenges(vp.num_vars);
+
+    let (lookup_points, lookup_evals) = LassoVerifier::<F, Pcs>::verify_sum_check(
+        lookup_table,
+        vp.num_vars,
+        vp.lookup_polys_offset,
+        vp.lookup_points_offset,
+        &r,
+        transcript,
+    )?;
+
+    // Round n+1
+    let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
+
+    // memory checking
+    let (mem_check_opening_points, mem_check_opening_evals) =
+        LassoVerifier::<F, Pcs>::memory_checking(
+            vp.num_vars,
+            vp.lookup_polys_offset,
+            vp.lookup_points_offset,
+            lookup_table,
+            &beta,
+            &gamma,
+            transcript,
+        )?;
+
+    let lookup_opening_points = iter::empty()
+        .chain(lookup_points)
+        .chain(mem_check_opening_points)
+        .collect_vec();
+    let lookup_evals = iter::empty()
+        .chain(lookup_evals)
+        .chain(mem_check_opening_evals)
+        .collect_vec();
+    Ok((
+        lookup_comms,
+        lookup_opening_points,
+        lookup_evals,
+        vec![beta, gamma],
+    ))
 }

@@ -91,13 +91,16 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
 
 #[cfg(test)]
 mod test {
-    use std::{iter, array};
+    use std::{array, iter};
 
     use super::AndTable;
     use crate::{
         backend::{
-            hyperplonk::{HyperPlonk, prover::instance_polys, util::Permutation},
-            test::run_plonkish_backend, lookup::lasso::DecomposableTable, PlonkishCircuitInfo, PlonkishCircuit, mock::MockCircuit,
+            hyperplonk::{prover::instance_polys, util::Permutation, HyperPlonk},
+            lookup::lasso::DecomposableTable,
+            mock::MockCircuit,
+            test::run_plonkish_backend,
+            PlonkishCircuit, PlonkishCircuitInfo,
         },
         pcs::{
             multilinear::{
@@ -106,14 +109,20 @@ mod test {
             },
             univariate::UnivariateKzg,
         },
+        poly::Polynomial,
         util::{
-            code::BrakedownSpec6, hash::Keccak256, test::{seeded_std_rng, rand_vec, rand_idx},
-            transcript::Keccak256Transcript, arithmetic::{usize_from_bits_le, fe_to_bits_le}, expression::{Query, Rotation, Expression},
-        }, poly::Polynomial,
+            arithmetic::{fe_to_bits_le, usize_from_bits_le},
+            code::BrakedownSpec6,
+            expression::{Expression, Query, Rotation},
+            hash::Keccak256,
+            test::{rand_idx, rand_vec, seeded_std_rng},
+            transcript::Keccak256Transcript,
+        },
     };
     use halo2_curves::{
         bn256::{self, Bn256},
-        grumpkin, ff::PrimeField,
+        ff::PrimeField,
+        grumpkin,
     };
     use itertools::Itertools;
     use num_integer::Integer;
@@ -127,7 +136,7 @@ mod test {
     ) -> (PlonkishCircuitInfo<F>, impl PlonkishCircuit<F>) {
         let size = 1 << num_vars;
         let mut polys = [(); 13].map(|_| vec![F::ZERO; size]);
-    
+
         let [t_l, t_r, t_o] = [(); 3].map(|_| {
             iter::empty()
                 .chain([F::ZERO, F::ZERO])
@@ -138,10 +147,10 @@ mod test {
         polys[7] = t_l;
         polys[8] = t_r;
         polys[9] = t_o;
-    
+
         let instances = rand_vec(num_vars, &mut witness_rng);
         polys[0] = instance_polys(num_vars, [&instances])[0].evals().to_vec();
-    
+
         let mut permutation = Permutation::default();
         for poly in [10, 11, 12] {
             permutation.copy((poly, 1), (poly, 1));
@@ -160,8 +169,8 @@ mod test {
                 let w_l = polys[l_copy_idx.0][l_copy_idx.1];
                 let w_r = polys[r_copy_idx.0][r_copy_idx.1];
                 let w_o = F::from(
-                    (usize_from_bits_le(&fe_to_bits_le(w_l)) & usize_from_bits_le(&fe_to_bits_le(w_r)))
-                        as u64,
+                    (usize_from_bits_le(&fe_to_bits_le(w_l))
+                        & usize_from_bits_le(&fe_to_bits_le(w_r))) as u64,
                 );
                 [w_l, w_r, w_o]
             } else {
@@ -169,7 +178,7 @@ mod test {
                 let w_o = w_l & w_r;
                 [F::from(w_l), F::from(w_r), F::from(w_o)]
             };
-    
+
             let values = vec![(10, w_l), (11, w_r), (12, w_o)];
             for (poly, value) in values {
                 polys[poly][idx] = value;
@@ -197,7 +206,8 @@ mod test {
         permutations: Vec<Vec<(usize, usize)>>,
     ) -> PlonkishCircuitInfo<F> {
         let [pi, q_l, q_r, q_m, q_o, q_c, q_lookup, t_l, t_r, t_o, w_l, w_r, w_o] =
-            &array::from_fn(|poly| Query::new(poly, Rotation::cur())).map(Expression::<F>::Polynomial);
+            &array::from_fn(|poly| Query::new(poly, Rotation::cur()))
+                .map(Expression::<F>::Polynomial);
         let lasso_lookup_input = w_o.clone();
         let lasso_lookup_indices = Expression::DistributePowers(
             vec![w_l.clone(), w_r.clone()],
@@ -213,7 +223,7 @@ mod test {
             num_challenges: vec![0],
             constraints: vec![],
             lookups: vec![vec![]],
-            lasso_lookup: vec![(lasso_lookup_input, lasso_lookup_indices, table)],
+            lasso_lookup: Some((lasso_lookup_input, lasso_lookup_indices, table)),
             permutations,
             max_degree: Some(4),
         }
