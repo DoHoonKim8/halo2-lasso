@@ -473,10 +473,7 @@ mod test {
     use crate::{
         backend::{
             hyperplonk::{
-                util::{
-                    rand_vanilla_plonk_circuit, rand_vanilla_plonk_with_lasso_lookup_circuit,
-                    rand_vanilla_plonk_with_lookup_circuit,
-                },
+                util::{rand_vanilla_plonk_circuit, rand_vanilla_plonk_with_lookup_circuit},
                 HyperPlonk,
             },
             test::run_plonkish_backend,
@@ -514,17 +511,10 @@ mod test {
                         rand_vanilla_plonk_with_lookup_circuit(num_vars, seeded_std_rng(), seeded_std_rng())
                     });
                 }
-
-                #[test]
-                fn [<$name _hyperplonk_vanilla_plonk_with_lasso_lookup>]() {
-                    run_plonkish_backend::<_, HyperPlonk<$pcs>, Keccak256Transcript<_>, _>($num_vars_range, |num_vars| {
-                        rand_vanilla_plonk_with_lasso_lookup_circuit(num_vars, seeded_std_rng(), seeded_std_rng())
-                    });
-                }
             }
         };
         ($name:ident, $pcs:ty) => {
-            tests!($name, $pcs, 15..16);
+            tests!($name, $pcs, 2..16);
         };
     }
 
