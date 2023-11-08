@@ -275,13 +275,15 @@ impl<
 
     pub fn prove_sum_check(
         points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
         input_poly: &Poly<F>,
         e_polys: &[&Poly<F>],
         r: &[F],
         num_vars: usize,
         transcript: &mut impl TranscriptWrite<CommitmentChunk<F, Pcs>, F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         Surge::<F, Pcs>::prove_sum_check(
             table,
             input_poly,
@@ -289,6 +291,8 @@ impl<
             r,
             num_vars,
             points_offset,
+            lookup_opening_points,
+            lookup_opening_evals,
             transcript,
         )
     }
@@ -339,6 +343,8 @@ impl<
 
     pub fn memory_checking<'a>(
         points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &'a [&MultilinearPolynomial<F>],
         dims: &'a [Poly<F>],
@@ -348,7 +354,7 @@ impl<
         gamma: &F,
         tau: &F,
         transcript: &mut impl FieldTranscriptWrite<F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let mut memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
             points_offset,
             &table,
@@ -361,16 +367,18 @@ impl<
             &tau,
         );
 
-        let (mem_check_opening_points, mem_check_opening_evals) = memory_checking
+        memory_checking
             .iter_mut()
-            .map(|memory_checking| memory_checking.prove(transcript))
-            .collect::<Result<Vec<(Vec<Vec<F>>, Vec<Evaluation<F>>)>, Error>>()?
-            .into_iter()
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-        Ok((
-            mem_check_opening_points.concat(),
-            mem_check_opening_evals.concat(),
-        ))
+            .map(|memory_checking| {
+                memory_checking.prove(
+                    points_offset,
+                    lookup_opening_points,
+                    lookup_opening_evals,
+                    transcript,
+                )
+            })
+            .collect::<Result<Vec<()>, Error>>()?;
+        Ok(())
     }
 
     pub fn commit(

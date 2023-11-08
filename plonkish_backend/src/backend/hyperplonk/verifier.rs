@@ -201,23 +201,17 @@ pub(super) fn zero_check_opening_points_len<F: PrimeField>(
         .sum()
 }
 
-pub(super) fn verify_lookup<
+pub(super) fn verify_lasso_lookup<
     F: PrimeField,
     Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
 >(
     vp: &HyperPlonkVerifierParam<F, Pcs>,
+    lookup_opening_points: &mut Vec<Vec<F>>,
+    lookup_opening_evals: &mut Vec<Evaluation<F>>,
     transcript: &mut impl TranscriptRead<Pcs::CommitmentChunk, F>,
-) -> Result<
-    (
-        Vec<Pcs::Commitment>,
-        Vec<Vec<F>>,
-        Vec<Evaluation<F>>,
-        Vec<F>,
-    ),
-    Error,
-> {
+) -> Result<(Vec<Pcs::Commitment>, Vec<F>), Error> {
     if vp.lasso_table.is_none() {
-        return Ok((vec![], vec![], vec![], vec![]));
+        return Ok((vec![], vec![]));
     }
     let lookup_table = vp.lasso_table.as_ref().unwrap();
 
@@ -227,11 +221,13 @@ pub(super) fn verify_lookup<
     // Round n
     let r = transcript.squeeze_challenges(vp.num_vars);
 
-    let (lookup_points, lookup_evals) = LassoVerifier::<F, Pcs>::verify_sum_check(
+    LassoVerifier::<F, Pcs>::verify_sum_check(
         lookup_table,
         vp.num_vars,
         vp.lookup_polys_offset,
         vp.lookup_points_offset,
+        lookup_opening_points,
+        lookup_opening_evals,
         &r,
         transcript,
     )?;
@@ -240,29 +236,17 @@ pub(super) fn verify_lookup<
     let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
 
     // memory checking
-    let (mem_check_opening_points, mem_check_opening_evals) =
-        LassoVerifier::<F, Pcs>::memory_checking(
-            vp.num_vars,
-            vp.lookup_polys_offset,
-            vp.lookup_points_offset,
-            lookup_table,
-            &beta,
-            &gamma,
-            transcript,
-        )?;
-
-    let lookup_opening_points = iter::empty()
-        .chain(lookup_points)
-        .chain(mem_check_opening_points)
-        .collect_vec();
-    let lookup_evals = iter::empty()
-        .chain(lookup_evals)
-        .chain(mem_check_opening_evals)
-        .collect_vec();
-    Ok((
-        lookup_comms,
+    LassoVerifier::<F, Pcs>::memory_checking(
+        vp.num_vars,
+        vp.lookup_polys_offset,
+        vp.lookup_points_offset,
         lookup_opening_points,
-        lookup_evals,
-        vec![beta, gamma],
-    ))
+        lookup_opening_evals,
+        lookup_table,
+        &beta,
+        &gamma,
+        transcript,
+    )?;
+
+    Ok((lookup_comms, vec![beta, gamma]))
 }

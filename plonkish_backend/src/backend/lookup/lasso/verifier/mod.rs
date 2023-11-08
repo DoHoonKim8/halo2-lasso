@@ -59,9 +59,11 @@ impl<
         num_vars: usize,
         polys_offset: usize,
         points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         r: &[F],
         transcript: &mut impl FieldTranscriptRead<F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let expression = Surge::<F, Pcs>::sum_check_expression(&table);
         let claim = transcript.read_field_element()?;
         let (_, x) = ClassicSumCheck::<EvaluationsProver<_>>::verify(
@@ -71,7 +73,8 @@ impl<
             claim,
             transcript,
         )?;
-        let points = vec![r.to_vec(), x];
+        lookup_opening_points.extend_from_slice(&[r.to_vec(), x]);
+
         let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
         let e_polys_offset = polys_offset + 1 + table.chunk_bits().len() * 3;
         let evals = pcs_query
@@ -82,8 +85,8 @@ impl<
             })
             .chain([Evaluation::new(polys_offset, points_offset, claim)])
             .collect_vec();
-
-        Ok((points, evals))
+        lookup_opening_evals.extend_from_slice(&evals);
+        Ok(())
     }
 
     fn chunks(table: &Box<dyn DecomposableTable<F>>) -> Vec<Chunk<F>> {
@@ -141,10 +144,7 @@ impl<
         chunk_map
             .into_iter()
             .enumerate()
-            .map(|(index, (_, chunks))| {
-                let points_offset = points_offset + 2 + 2 * index;
-                MemoryCheckingVerifier::new(points_offset, chunks)
-            })
+            .map(|(_, (_, chunks))| MemoryCheckingVerifier::new(chunks))
             .collect_vec()
     }
 
@@ -152,30 +152,30 @@ impl<
         num_reads: usize,
         polys_offset: usize,
         points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
         gamma: &F,
         tau: &F,
         transcript: &mut impl FieldTranscriptRead<F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let memory_checking = Self::prepare_memory_checking(points_offset, table);
-        let (mem_check_opening_points, mem_check_opening_evals) = memory_checking
+        memory_checking
             .iter()
             .map(|memory_checking| {
                 memory_checking.verify(
                     table.chunk_bits().len(),
                     num_reads,
                     polys_offset,
+                    points_offset,
                     &gamma,
                     &tau,
+                    lookup_opening_points,
+                    lookup_opening_evals,
                     transcript,
                 )
             })
-            .collect::<Result<Vec<(Vec<Vec<F>>, Vec<Evaluation<F>>)>, Error>>()?
-            .into_iter()
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-        Ok((
-            mem_check_opening_points.concat(),
-            mem_check_opening_evals.concat(),
-        ))
+            .collect::<Result<Vec<()>, Error>>()?;
+        Ok(())
     }
 }

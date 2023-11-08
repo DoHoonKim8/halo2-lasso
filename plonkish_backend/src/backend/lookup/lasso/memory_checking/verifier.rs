@@ -112,17 +112,14 @@ impl<F> Memory<F> {
 
 #[derive(Clone, Debug)]
 pub(in crate::backend::lookup::lasso) struct MemoryCheckingVerifier<F: PrimeField> {
-    /// offset of MemoryCheckingProver instance opening points
-    points_offset: usize,
     /// chunks with the same bits size
     chunks: Vec<Chunk<F>>,
     _marker: PhantomData<F>,
 }
 
 impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
-    pub fn new(points_offset: usize, chunks: Vec<Chunk<F>>) -> Self {
+    pub fn new(chunks: Vec<Chunk<F>>) -> Self {
         Self {
-            points_offset,
             chunks,
             _marker: PhantomData,
         }
@@ -133,10 +130,13 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
         num_chunks: usize,
         num_reads: usize,
         polys_offset: usize,
+        points_offset: usize,
         gamma: &F,
         tau: &F,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         transcript: &mut impl FieldTranscriptRead<F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let num_memories: usize = self.chunks.iter().map(|chunk| chunk.num_memories()).sum();
         let memory_bits = self.chunks[0].chunk_bits();
         let (read_write_xs, x) = verify_grand_product(
@@ -176,29 +176,36 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
             .into_iter()
             .multiunzip::<(Vec<_>, Vec<_>, Vec<_>, Vec<Vec<_>>)>();
 
-        let opening_evals = self
-            .opening_evals(
-                num_chunks,
-                polys_offset,
-                &dim_xs,
-                &read_ts_poly_xs,
-                &final_cts_poly_ys,
-                &e_poly_xs.concat(),
-            )
-            .collect_vec();
+        self.opening_evals(
+            num_chunks,
+            polys_offset,
+            points_offset,
+            &lookup_opening_points,
+            lookup_opening_evals,
+            &dim_xs,
+            &read_ts_poly_xs,
+            &final_cts_poly_ys,
+            &e_poly_xs.concat(),
+        );
+        lookup_opening_points.extend_from_slice(&[x, y]);
 
-        Ok((vec![x, y], opening_evals))
+        Ok(())
     }
 
     fn opening_evals(
         &self,
         num_chunks: usize,
         polys_offset: usize,
+        points_offset: usize,
+        lookup_opening_points: &Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         dim_xs: &[F],
         read_ts_poly_xs: &[F],
         final_cts_poly_ys: &[F],
         e_poly_xs: &[F],
-    ) -> impl Iterator<Item = Evaluation<F>> {
+    ) {
+        let x_offset = points_offset + lookup_opening_points.len();
+        let y_offset = x_offset + 1;
         let (dim_xs, read_ts_poly_xs, final_cts_poly_ys) = self
             .chunks
             .iter()
@@ -206,13 +213,9 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
             .map(|(i, chunk)| {
                 let chunk_polys_index = chunk.chunk_polys_index(polys_offset, num_chunks);
                 (
-                    Evaluation::new(chunk_polys_index[0], self.points_offset, dim_xs[i]),
-                    Evaluation::new(chunk_polys_index[1], self.points_offset, read_ts_poly_xs[i]),
-                    Evaluation::new(
-                        chunk_polys_index[2],
-                        self.points_offset + 1,
-                        final_cts_poly_ys[i],
-                    ),
+                    Evaluation::new(chunk_polys_index[0], x_offset, dim_xs[i]),
+                    Evaluation::new(chunk_polys_index[1], x_offset, read_ts_poly_xs[i]),
+                    Evaluation::new(chunk_polys_index[2], y_offset, final_cts_poly_ys[i]),
                 )
             })
             .multiunzip::<(Vec<Evaluation<F>>, Vec<Evaluation<F>>, Vec<Evaluation<F>>)>();
@@ -224,9 +227,11 @@ impl<'a, F: PrimeField> MemoryCheckingVerifier<F> {
             .flat_map(|chunk| chunk.memory_indices())
             .zip(e_poly_xs)
             .map(|(memory_index, &e_poly_x)| {
-                Evaluation::new(e_poly_offset + memory_index, self.points_offset, e_poly_x)
+                Evaluation::new(e_poly_offset + memory_index, x_offset, e_poly_x)
             })
             .collect_vec();
-        chain!(dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs)
+        lookup_opening_evals.extend_from_slice(
+            &chain!(dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs).collect_vec(),
+        );
     }
 }

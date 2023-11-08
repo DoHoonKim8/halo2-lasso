@@ -22,7 +22,7 @@ use crate::{
 use rand::RngCore;
 use std::{fmt::Debug, hash::Hash, iter, marker::PhantomData};
 
-use self::{prover::prove_lookup, verifier::verify_lookup};
+use self::{prover::prove_lasso_lookup, verifier::verify_lasso_lookup};
 
 use super::lookup::lasso::DecomposableTable;
 
@@ -232,8 +232,15 @@ where
             .chain(witness_polys.iter())
             .collect_vec();
 
-        let (lookup_polys, lookup_comms, lookup_opening_points, lookup_evals, lasso_challenges) =
-            prove_lookup(pp, &polys, transcript)?;
+        let mut lookup_opening_points = vec![];
+        let mut lookup_opening_evals = vec![];
+        let (lookup_polys, lookup_comms, lasso_challenges) = prove_lasso_lookup(
+            pp,
+            &polys,
+            &mut lookup_opening_points,
+            &mut lookup_opening_evals,
+            transcript,
+        )?;
         let [beta, gamma] = if pp.lasso_lookup.is_some() {
             lasso_challenges.try_into().unwrap()
         } else {
@@ -288,7 +295,10 @@ where
             .chain(points)
             .chain(lookup_opening_points)
             .collect_vec();
-        let evals = iter::empty().chain(evals).chain(lookup_evals).collect_vec();
+        let evals = iter::empty()
+            .chain(evals)
+            .chain(lookup_opening_evals)
+            .collect_vec();
         let timer = start_timer(|| format!("pcs_batch_open-{}", evals.len()));
         Pcs::batch_open(&pp.pcs, polys, comms, &points, &evals, transcript)?;
         end_timer(timer);
@@ -320,8 +330,14 @@ where
             challenges.extend(transcript.squeeze_challenges(*num_challenges));
         }
 
-        let (lookup_comms, lookup_opening_points, lookup_evals, lasso_challenges) =
-            verify_lookup::<F, Pcs>(vp, transcript)?;
+        let mut lookup_opening_points = vec![];
+        let mut lookup_opening_evals = vec![];
+        let (lookup_comms, lasso_challenges) = verify_lasso_lookup::<F, Pcs>(
+            vp,
+            &mut lookup_opening_points,
+            &mut lookup_opening_evals,
+            transcript,
+        )?;
         let [beta, gamma] = if vp.lasso_table.is_some() {
             lasso_challenges.try_into().unwrap()
         } else {
@@ -330,6 +346,7 @@ where
 
         let permutation_z_comms =
             Pcs::read_commitments(&vp.pcs, vp.num_permutation_z_polys, transcript)?;
+
         // Round n+2
 
         let alpha = transcript.squeeze_challenge();
@@ -359,7 +376,10 @@ where
             .chain(points)
             .chain(lookup_opening_points)
             .collect_vec();
-        let evals = iter::empty().chain(evals).chain(lookup_evals).collect_vec();
+        let evals = iter::empty()
+            .chain(evals)
+            .chain(lookup_opening_evals)
+            .collect_vec();
         Pcs::batch_verify(&vp.pcs, comms, &points, &evals, transcript)?;
 
         Ok(())

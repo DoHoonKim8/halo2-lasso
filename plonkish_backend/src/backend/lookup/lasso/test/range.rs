@@ -148,25 +148,36 @@ mod test {
             permutation.copy((poly, 1), (poly, 1));
         }
         for idx in 0..size - 1 {
-            let [w_l, w_r] = if preprocess_rng.next_u32().is_even() && idx > 1 {
-                let [l_copy_idx, r_copy_idx] = [(); 2].map(|_| {
-                    (
-                        rand_idx(6..9, &mut preprocess_rng),
-                        rand_idx(1..idx, &mut preprocess_rng),
-                    )
-                });
+            let w_l = if preprocess_rng.next_u32().is_even() && idx > 1 {
+                let l_copy_idx = (6, rand_idx(1..idx, &mut preprocess_rng));
                 permutation.copy(l_copy_idx, (6, idx));
-                permutation.copy(r_copy_idx, (7, idx));
-                [
-                    polys[l_copy_idx.0][l_copy_idx.1],
-                    polys[r_copy_idx.0][r_copy_idx.1],
+                polys[l_copy_idx.0][l_copy_idx.1]
+            } else {
+                let value = witness_rng.next_u64() as usize;
+                F::from_u128(value.pow(2) as u128)
+            };
+            let w_r = F::from(witness_rng.next_u64());
+            let q_c = F::random(&mut preprocess_rng);
+            let values = if preprocess_rng.next_u32().is_even() {
+                vec![
+                    (1, F::ONE),
+                    (2, F::ONE),
+                    (4, -F::ONE),
+                    (5, q_c),
+                    (6, w_l),
+                    (7, w_r),
+                    (8, w_l + w_r + q_c + polys[0][idx]),
                 ]
             } else {
-                let a = witness_rng.next_u64() as usize;
-                let b = witness_rng.next_u64();
-                [F::from_u128(a.pow(2) as u128), F::from(b)]
+                vec![
+                    (3, F::ONE),
+                    (4, -F::ONE),
+                    (5, q_c),
+                    (6, w_l),
+                    (7, w_r),
+                    (8, w_l * w_r + q_c + polys[0][idx]),
+                ]
             };
-            let values = [(6, w_l), (7, w_r)];
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
@@ -205,7 +216,7 @@ mod test {
             preprocess_polys: preprocess_polys.to_vec(),
             num_witness_polys: vec![3],
             num_challenges: vec![0],
-            constraints: vec![],
+            constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
             lookups: vec![vec![]],
             lasso_lookup: Some((lasso_lookup_input, lasso_lookup_indices, table)),
             permutations,

@@ -84,14 +84,14 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
         memory_index
     }
 
-    fn memory_to_subtable_index(&self, memory_index: usize) -> usize {
+    fn memory_to_subtable_index(&self, _memory_index: usize) -> usize {
         0
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{array, iter};
+    use std::array;
 
     use super::AndTable;
     use crate::{
@@ -124,35 +124,23 @@ mod test {
         ff::PrimeField,
         grumpkin,
     };
-    use itertools::Itertools;
     use num_integer::Integer;
     use rand::RngCore;
 
-    fn rand_vanilla_plonk_with_lasso_lookup_circuit<F: PrimeField>(
+    fn rand_lasso_lookup_circuit<F: PrimeField>(
         num_vars: usize,
         table: Box<dyn DecomposableTable<F>>,
         mut preprocess_rng: impl RngCore,
         mut witness_rng: impl RngCore,
     ) -> (PlonkishCircuitInfo<F>, impl PlonkishCircuit<F>) {
         let size = 1 << num_vars;
-        let mut polys = [(); 13].map(|_| vec![F::ZERO; size]);
-
-        let [t_l, t_r, t_o] = [(); 3].map(|_| {
-            iter::empty()
-                .chain([F::ZERO, F::ZERO])
-                .chain(iter::repeat_with(|| F::random(&mut preprocess_rng)))
-                .take(size)
-                .collect_vec()
-        });
-        polys[7] = t_l;
-        polys[8] = t_r;
-        polys[9] = t_o;
+        let mut polys = [(); 9].map(|_| vec![F::ZERO; size]);
 
         let instances = rand_vec(num_vars, &mut witness_rng);
         polys[0] = instance_polys(num_vars, [&instances])[0].evals().to_vec();
 
         let mut permutation = Permutation::default();
-        for poly in [10, 11, 12] {
+        for poly in [6, 7, 8] {
             permutation.copy((poly, 1), (poly, 1));
         }
         for idx in 0..size - 1 {
@@ -160,18 +148,17 @@ mod test {
             let [w_l, w_r, w_o] = if use_copy {
                 let [l_copy_idx, r_copy_idx] = [(); 2].map(|_| {
                     (
-                        rand_idx(10..13, &mut preprocess_rng),
+                        rand_idx(6..9, &mut preprocess_rng),
                         rand_idx(1..idx, &mut preprocess_rng),
                     )
                 });
-                permutation.copy(l_copy_idx, (10, idx));
-                permutation.copy(r_copy_idx, (11, idx));
+                permutation.copy(l_copy_idx, (6, idx));
+                permutation.copy(r_copy_idx, (7, idx));
                 let w_l = polys[l_copy_idx.0][l_copy_idx.1];
                 let w_r = polys[r_copy_idx.0][r_copy_idx.1];
-                let w_o = F::from(
-                    (usize_from_bits_le(&fe_to_bits_le(w_l))
-                        & usize_from_bits_le(&fe_to_bits_le(w_r))) as u64,
-                );
+                let w_o = usize_from_bits_le(&fe_to_bits_le(w_l))
+                    & usize_from_bits_le(&fe_to_bits_le(w_r));
+                let w_o = F::from(w_o as u64);
                 [w_l, w_r, w_o]
             } else {
                 let [w_l, w_r] = [(); 2].map(|_| witness_rng.next_u64());
@@ -179,16 +166,36 @@ mod test {
                 [F::from(w_l), F::from(w_r), F::from(w_o)]
             };
 
-            let values = vec![(10, w_l), (11, w_r), (12, w_o)];
+            let q_c = F::random(&mut preprocess_rng);
+            let values = if preprocess_rng.next_u32().is_even() {
+                vec![
+                    (1, F::ONE),
+                    (2, F::ONE),
+                    (4, -F::ONE),
+                    (5, q_c),
+                    (6, w_l),
+                    (7, w_r),
+                    (8, w_o),
+                ]
+            } else {
+                vec![
+                    (3, F::ONE),
+                    (4, -F::ONE),
+                    (5, q_c),
+                    (6, w_l),
+                    (7, w_r),
+                    (8, w_o),
+                ]
+            };
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
         }
-        let [_, q_l, q_r, q_m, q_o, q_c, q_lookup, t_l, t_r, t_o, w_l, w_r, w_o] = polys;
-        let circuit_info = vanilla_plonk_with_lasso_lookup_circuit_info(
+        let [_, q_l, q_r, q_m, q_o, q_c, w_l, w_r, w_o] = polys;
+        let circuit_info = lasso_lookup_circuit_info(
             num_vars,
             instances.len(),
-            [q_l, q_r, q_m, q_o, q_c, q_lookup, t_l, t_r, t_o],
+            [q_l, q_r, q_m, q_o, q_c],
             table,
             permutation.into_cycles(),
         );
@@ -198,14 +205,14 @@ mod test {
         )
     }
 
-    fn vanilla_plonk_with_lasso_lookup_circuit_info<F: PrimeField>(
+    fn lasso_lookup_circuit_info<F: PrimeField>(
         num_vars: usize,
         num_instances: usize,
-        preprocess_polys: [Vec<F>; 9],
+        preprocess_polys: [Vec<F>; 5],
         table: Box<dyn DecomposableTable<F>>,
         permutations: Vec<Vec<(usize, usize)>>,
     ) -> PlonkishCircuitInfo<F> {
-        let [pi, q_l, q_r, q_m, q_o, q_c, q_lookup, t_l, t_r, t_o, w_l, w_r, w_o] =
+        let [_, _, _, _, _, _, w_l, w_r, w_o] =
             &array::from_fn(|poly| Query::new(poly, Rotation::cur()))
                 .map(Expression::<F>::Polynomial);
         let lasso_lookup_input = w_o.clone();
@@ -236,7 +243,7 @@ mod test {
                 fn [<$name _hyperplonk_vanilla_plonk_with_lasso_lookup>]() {
                     run_plonkish_backend::<_, HyperPlonk<$pcs>, Keccak256Transcript<_>, _>($num_vars_range, |num_vars| {
                         let table = Box::new(AndTable::<$f>::new());
-                        rand_vanilla_plonk_with_lasso_lookup_circuit(num_vars, table, seeded_std_rng(), seeded_std_rng())
+                        rand_lasso_lookup_circuit(num_vars, table, seeded_std_rng(), seeded_std_rng())
                     });
                 }
             }

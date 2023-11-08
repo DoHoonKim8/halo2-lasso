@@ -1,17 +1,10 @@
 pub mod prover;
 pub mod verifier;
 
-use std::iter;
-
 use halo2_curves::ff::PrimeField;
-use itertools::Itertools;
 pub use prover::MemoryCheckingProver;
 
-use crate::{
-    poly::multilinear::MultilinearPolynomial,
-    util::{arithmetic::inner_product, transcript::FieldTranscriptRead},
-    Error,
-};
+use crate::poly::multilinear::MultilinearPolynomial;
 
 #[derive(Clone, Debug)]
 struct MemoryGKR<F: PrimeField> {

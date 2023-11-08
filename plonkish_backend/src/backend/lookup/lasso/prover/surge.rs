@@ -135,8 +135,10 @@ impl<
         r: &[F],
         num_vars: usize,
         points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         transcript: &mut impl TranscriptWrite<CommitmentChunk<F, Pcs>, F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let claimed_sum = Self::sum_check_claim(&r, &table, &e_polys);
         assert_eq!(claimed_sum, input_poly.evaluate(r));
 
@@ -158,7 +160,7 @@ impl<
             transcript,
         )?;
 
-        let points = vec![r.to_vec(), x];
+        lookup_opening_points.extend_from_slice(&[r.to_vec(), x]);
         let pcs_query = Self::pcs_query(&expression, 0);
         let evals = pcs_query
             .into_iter()
@@ -178,8 +180,9 @@ impl<
                 claimed_sum,
             )])
             .collect_vec();
+        lookup_opening_evals.extend_from_slice(&evals);
 
-        Ok((points, evals))
+        Ok(())
     }
 
     pub fn sum_check_claim(

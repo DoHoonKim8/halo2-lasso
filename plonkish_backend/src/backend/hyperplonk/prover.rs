@@ -205,25 +205,18 @@ pub(crate) fn prove_sum_check<F: PrimeField>(
     Ok((points(&pcs_query, &x), evals))
 }
 
-pub(super) fn prove_lookup<
+pub(super) fn prove_lasso_lookup<
     F: PrimeField,
     Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
 >(
     pp: &HyperPlonkProverParam<F, Pcs>,
     polys: &[&MultilinearPolynomial<F>],
+    lookup_opening_points: &mut Vec<Vec<F>>,
+    lookup_opening_evals: &mut Vec<Evaluation<F>>,
     transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
-) -> Result<
-    (
-        Vec<MultilinearPolynomial<F>>,
-        Vec<Pcs::Commitment>,
-        Vec<Vec<F>>,
-        Vec<Evaluation<F>>,
-        Vec<F>,
-    ),
-    Error,
-> {
+) -> Result<(Vec<MultilinearPolynomial<F>>, Vec<Pcs::Commitment>, Vec<F>), Error> {
     if pp.lasso_lookup.is_none() {
-        return Ok((vec![], vec![], vec![], vec![], vec![]));
+        return Ok((vec![], vec![], vec![]));
     }
     let lasso_lookup = pp.lasso_lookup.as_ref().unwrap();
     let (lookup, table) = ((&lasso_lookup.0, &lasso_lookup.1), &lasso_lookup.2);
@@ -258,8 +251,10 @@ pub(super) fn prove_lookup<
         &lookup_polys[4],
     );
     // Lasso Sumcheck
-    let (lookup_points, lookup_evals) = LassoProver::<F, Pcs>::prove_sum_check(
+    LassoProver::<F, Pcs>::prove_sum_check(
         pp.lookup_points_offset,
+        lookup_opening_points,
+        lookup_opening_evals,
         &table,
         input_poly,
         &e_polys.iter().collect_vec(),
@@ -273,38 +268,25 @@ pub(super) fn prove_lookup<
     let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
 
     // memory_checking
-    let (mem_check_opening_points, mem_check_opening_evals) =
-        LassoProver::<F, Pcs>::memory_checking(
-            pp.lookup_points_offset,
-            table,
-            subtable_polys,
-            dims,
-            read_ts_polys,
-            final_cts_polys,
-            e_polys,
-            &beta,
-            &gamma,
-            transcript,
-        )?;
+    LassoProver::<F, Pcs>::memory_checking(
+        pp.lookup_points_offset,
+        lookup_opening_points,
+        lookup_opening_evals,
+        table,
+        subtable_polys,
+        dims,
+        read_ts_polys,
+        final_cts_polys,
+        e_polys,
+        &beta,
+        &gamma,
+        transcript,
+    )?;
 
     let lookup_polys = lookup_polys
         .into_iter()
         .flat_map(|lookup_polys| lookup_polys.into_iter().map(|poly| poly.poly).collect_vec())
         .collect_vec();
     let lookup_comms = lookup_comms.concat();
-    let lookup_opening_points = iter::empty()
-        .chain(lookup_points)
-        .chain(mem_check_opening_points)
-        .collect_vec();
-    let lookup_evals = iter::empty()
-        .chain(lookup_evals)
-        .chain(mem_check_opening_evals)
-        .collect_vec();
-    Ok((
-        lookup_polys,
-        lookup_comms,
-        lookup_opening_points,
-        lookup_evals,
-        vec![beta, gamma],
-    ))
+    Ok((lookup_polys, lookup_comms, vec![beta, gamma]))
 }

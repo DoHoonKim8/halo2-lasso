@@ -144,8 +144,11 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
 
     pub fn prove(
         &mut self,
+        points_offset: usize,
+        lookup_opening_points: &mut Vec<Vec<F>>,
+        lookup_opening_evals: &mut Vec<Evaluation<F>>,
         transcript: &mut impl FieldTranscriptWrite<F>,
-    ) -> Result<(Vec<Vec<F>>, Vec<Evaluation<F>>), Error> {
+    ) -> Result<(), Error> {
         let (_, x) = prove_grand_product(
             iter::repeat(None).take(self.memories.len() * 2),
             chain!(self.reads(), self.writes()),
@@ -158,6 +161,12 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             transcript,
         )?;
 
+        assert_eq!(
+            points_offset + lookup_opening_points.len(),
+            self.points_offset
+        );
+        let x_offset = points_offset + lookup_opening_points.len();
+        let y_offset = x_offset + 1;
         let (dim_xs, read_ts_poly_xs, final_cts_poly_xs, e_poly_xs) = self
             .chunks
             .iter()
@@ -167,8 +176,6 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
                 transcript.write_field_elements(&chunk_poly_evals).unwrap();
                 transcript.write_field_elements(&e_poly_xs).unwrap();
 
-                let x_offset = self.points_offset;
-                let y_offset = x_offset + 1;
                 (
                     Evaluation::new(chunk.dim.offset, x_offset, chunk_poly_evals[0]),
                     Evaluation::new(chunk.read_ts_poly.offset, x_offset, chunk_poly_evals[1]),
@@ -189,7 +196,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
                 Vec<Vec<Evaluation<F>>>,
             )>();
 
-        let opening_points = vec![x, y];
+        lookup_opening_points.extend_from_slice(&[x, y]);
         let opening_evals = chain!(
             dim_xs,
             read_ts_poly_xs,
@@ -197,7 +204,8 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             e_poly_xs.concat()
         )
         .collect_vec();
+        lookup_opening_evals.extend_from_slice(&opening_evals);
 
-        Ok((opening_points, opening_evals))
+        Ok(())
     }
 }
