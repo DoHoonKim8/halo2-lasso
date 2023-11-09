@@ -249,7 +249,7 @@ mod test {
             }
         };
         ($name:ident, $f:ty, $pcs:ty) => {
-            test!($name, $f, $pcs, 16..17);
+            test!($name, $f, $pcs, 14..17);
         };
     }
 

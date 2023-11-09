@@ -1,5 +1,6 @@
 pub use aggregation::AggregationCircuit;
 pub use sha256::Sha256Circuit;
+pub use range::RangeCircuit;
 
 mod aggregation {
     use halo2_proofs::{
@@ -474,6 +475,130 @@ mod sha256 {
 
         fn instances(&self) -> Vec<Vec<Fr>> {
             Vec::new()
+        }
+    }
+}
+
+mod range {
+    use halo2::halo2curves::ff::PrimeField;
+    use halo2_proofs::circuit::{SimpleFloorPlanner, Layouter, Value};
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
+    use halo2wrong::*;
+    use itertools::Itertools;
+    use plonkish_backend::{frontend::halo2::CircuitExt, halo2_curves::bn256::Fr};
+    use rand::RngCore;
+
+    #[derive(Clone, Debug)]
+    pub struct RangeCircuitConfig {
+        range_config: RangeConfig,
+    }
+
+    impl RangeCircuitConfig {
+        fn new(
+            meta: &mut ConstraintSystem<Fr>,
+            composition_bit_lens: Vec<usize>,
+            overflow_bit_lens: Vec<usize>,
+        ) -> Self {
+            let main_gate_config = MainGate::<Fr>::configure(meta);
+
+            let range_config = RangeChip::<Fr>::configure(
+                meta,
+                &main_gate_config,
+                composition_bit_lens,
+                overflow_bit_lens,
+            );
+            Self { range_config }
+        }
+
+        fn range_chip(&self) -> RangeChip<Fr> {
+            RangeChip::<Fr>::new(self.range_config.clone())
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct Input {
+        bit_len: usize,
+        limb_bit_len: usize,
+        value: Value<Fr>,
+    }
+
+    #[derive(Default)]
+    pub struct RangeCircuit {
+        inputs: Vec<Input>,
+    }
+
+    impl RangeCircuit {
+        fn composition_bit_lens() -> Vec<usize> {
+            vec![8]
+        }
+
+        fn overflow_bit_lens() -> Vec<usize> {
+            vec![]
+        }
+    }
+
+    impl Circuit<Fr> for RangeCircuit {
+        type Config = RangeCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            RangeCircuitConfig::new(
+                meta,
+                Self::composition_bit_lens(),
+                Self::overflow_bit_lens(),
+            )
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+            let range_chip = config.range_chip();
+            layouter.assign_region(
+                || "region 0",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+
+                    for input in self.inputs.iter() {
+                        let value = input.value;
+                        let limb_bit_len = input.limb_bit_len;
+                        let bit_len = input.bit_len;
+
+                        range_chip.assign(ctx, value, limb_bit_len, bit_len)?;
+                    }
+
+                    Ok(())
+                },
+            )?;
+
+            range_chip.load_table(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    impl CircuitExt<Fr> for RangeCircuit {
+        fn rand(k: usize, mut rng: impl RngCore) -> Self {
+            let inputs = vec![(); 1 << 16].iter().map(|_| {
+                let value = Fr::from_u128((rng.next_u64() as usize).pow(2) as u128);
+                Input {
+                    bit_len: 128,
+                    limb_bit_len: 8,
+                    value: Value::known(value)
+                }
+            })
+            .collect_vec();
+            Self { inputs }
+        }
+
+        fn instances(&self) -> Vec<Vec<Fr>> {
+            vec![vec![]]
         }
     }
 }

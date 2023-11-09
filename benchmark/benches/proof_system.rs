@@ -1,6 +1,6 @@
 use benchmark::{
     espresso,
-    halo2::{AggregationCircuit, Sha256Circuit},
+    halo2::{AggregationCircuit, Sha256Circuit, RangeCircuit},
 };
 use espresso_hyperplonk::{prelude::MockCircuit, HyperPlonkSNARK};
 use espresso_subroutines::{MultilinearKzgPCS, PolyIOP, PolynomialCommitmentScheme};
@@ -177,11 +177,11 @@ impl System {
     fn support(&self, circuit: Circuit) -> bool {
         match self {
             System::HyperPlonk | System::Halo2 => match circuit {
-                Circuit::VanillaPlonk | Circuit::Aggregation | Circuit::Sha256 => true,
+                Circuit::VanillaPlonk | Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => true,
             },
             System::EspressoHyperPlonk => match circuit {
                 Circuit::VanillaPlonk => true,
-                Circuit::Aggregation | Circuit::Sha256 => false,
+                Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => false,
             },
         }
     }
@@ -199,15 +199,17 @@ impl System {
                 Circuit::VanillaPlonk => bench_hyperplonk::<VanillaPlonk<Fr>>(k),
                 Circuit::Aggregation => bench_hyperplonk::<AggregationCircuit<Bn256>>(k),
                 Circuit::Sha256 => bench_hyperplonk::<Sha256Circuit>(k),
+                Circuit::Range => unimplemented!(),
             },
             System::Halo2 => match circuit {
                 Circuit::VanillaPlonk => bench_halo2::<VanillaPlonk<Fr>>(k),
                 Circuit::Aggregation => bench_halo2::<AggregationCircuit<Bn256>>(k),
                 Circuit::Sha256 => bench_halo2::<Sha256Circuit>(k),
+                Circuit::Range => bench_halo2::<RangeCircuit>(k),
             },
             System::EspressoHyperPlonk => match circuit {
                 Circuit::VanillaPlonk => bench_espresso_hyperplonk(espresso::vanilla_plonk(k)),
-                Circuit::Aggregation | Circuit::Sha256 => unreachable!(),
+                Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => unreachable!(),
             },
         }
     }
@@ -228,6 +230,7 @@ enum Circuit {
     VanillaPlonk,
     Aggregation,
     Sha256,
+    Range,
 }
 
 impl Circuit {
@@ -236,6 +239,7 @@ impl Circuit {
             Circuit::VanillaPlonk => 4,
             Circuit::Aggregation => 20,
             Circuit::Sha256 => 17,
+            Circuit::Range => 10,
         }
     }
 }
@@ -246,6 +250,7 @@ impl Display for Circuit {
             Circuit::VanillaPlonk => write!(f, "vanilla_plonk"),
             Circuit::Aggregation => write!(f, "aggregation"),
             Circuit::Sha256 => write!(f, "sha256"),
+            Circuit::Range => write!(f, "range"),
         }
     }
 }
@@ -268,6 +273,7 @@ fn parse_args() -> (Vec<System>, Circuit, Range<usize>) {
                     "vanilla_plonk" => circuit = Circuit::VanillaPlonk,
                     "aggregation" => circuit = Circuit::Aggregation,
                     "sha256" => circuit = Circuit::Sha256,
+                    "range" => circuit = Circuit::Range,
                     _ => panic!("circuit should be one of {{aggregation,vanilla_plonk}}"),
                 },
                 "--k" => {
