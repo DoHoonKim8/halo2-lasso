@@ -80,7 +80,7 @@ pub(crate) fn permutation_constraints<F: PrimeField>(
         .collect_vec();
     let ids = (0..polys.len())
         .map(|idx| {
-            let offset = F::from((idx << circuit_info.k) as u64);
+            let offset = F::from((idx << circuit_info.num_vars) as u64);
             Expression::Constant(offset) + Expression::identity()
         })
         .collect_vec();
@@ -125,7 +125,7 @@ pub(crate) fn permutation_constraints<F: PrimeField>(
 
 pub(super) fn permutation_polys<F: PrimeField>(
     num_vars: usize,
-    permutation_polys: &[usize],
+    permutation_polys: &[usize], // copy constraint에 참가하는 모든 polynomial들을 정렬해 놓은 것
     cycles: &[Vec<(usize, usize)>],
 ) -> Vec<MultilinearPolynomial<F>> {
     let poly_index = {

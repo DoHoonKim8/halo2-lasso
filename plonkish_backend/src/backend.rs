@@ -48,8 +48,12 @@ pub trait PlonkishBackend<F: Field>: Clone + Debug {
 
 #[derive(Clone, Debug)]
 pub struct PlonkishCircuitInfo<F> {
-    /// 2^k is the size of the circuit
+    /// 2^k is the maximum size of polynomials.
+    /// This can be different from `num_vars`, because of some intermediate polynomials
+    /// that is generated during proving lookup.
     pub k: usize,
+    /// 2^{num_vars} is the size of the circuit
+    pub num_vars: usize,
     /// Number of instnace value in each instance polynomial.
     pub num_instances: Vec<usize>,
     /// Preprocessed polynomials, which has index starts with offset

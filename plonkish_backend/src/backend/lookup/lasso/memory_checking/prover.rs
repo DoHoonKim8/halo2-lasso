@@ -12,8 +12,6 @@ use crate::{
 use super::MemoryGKR;
 
 pub struct MemoryCheckingProver<'a, F: PrimeField> {
-    /// offset of MemoryCheckingProver instance opening points
-    points_offset: usize,
     /// chunks with the same bits size
     chunks: Vec<Chunk<'a, F>>,
     /// GKR initial polynomials for each memory
@@ -24,7 +22,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
     // T_1[dim_1(x)], ..., T_k[dim_1(x)],
     // ...
     // T_{\alpha-k+1}[dim_c(x)], ..., T_{\alpha}[dim_c(x)]
-    pub fn new(points_offset: usize, chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
+    pub fn new(chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
         let num_reads = chunks[0].num_reads();
         let memory_size = 1 << chunks[0].chunk_bits();
 
@@ -70,7 +68,6 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             .collect();
 
         Self {
-            points_offset,
             chunks,
             memories: memories_gkr,
         }
@@ -160,11 +157,6 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             chain!(self.inits(), self.final_reads()),
             transcript,
         )?;
-
-        assert_eq!(
-            points_offset + lookup_opening_points.len(),
-            self.points_offset
-        );
         let x_offset = points_offset + lookup_opening_points.len();
         let y_offset = x_offset + 1;
         let (dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs) = self

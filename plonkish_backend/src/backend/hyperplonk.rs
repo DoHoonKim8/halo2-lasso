@@ -52,6 +52,7 @@ where
     pub(crate) lookup_points_offset: usize,
     pub(crate) num_permutation_z_polys: usize,
     pub(crate) num_vars: usize,
+    pub(crate) max_poly_num_vars: usize,
     pub(crate) expression: Expression<F>,
     pub(crate) preprocess_polys: Vec<MultilinearPolynomial<F>>,
     pub(crate) preprocess_comms: Vec<Pcs::Commitment>,
@@ -74,6 +75,7 @@ where
     pub(crate) lookup_points_offset: usize,
     pub(crate) num_permutation_z_polys: usize,
     pub(crate) num_vars: usize,
+    pub(crate) max_poly_num_vars: usize,
     pub(crate) expression: Expression<F>,
     pub(crate) preprocess_comms: Vec<Pcs::Commitment>,
     pub(crate) permutation_comms: Vec<(usize, Pcs::Commitment)>,
@@ -94,8 +96,7 @@ where
     ) -> Result<Pcs::Param, Error> {
         assert!(circuit_info.is_well_formed());
 
-        let num_vars = circuit_info.k;
-        let poly_size = 1 << num_vars;
+        let poly_size = 1 << circuit_info.k;
         let batch_size = batch_size(circuit_info);
         Pcs::setup(poly_size, batch_size, rng)
     }
@@ -106,11 +107,12 @@ where
     ) -> Result<(Self::ProverParam, Self::VerifierParam), Error> {
         assert!(circuit_info.is_well_formed());
 
-        let num_vars = circuit_info.k;
-        let poly_size = 1 << num_vars;
+        let max_poly_num_vars = circuit_info.k;
+        let poly_size = 1 << max_poly_num_vars;
         let batch_size = batch_size(circuit_info);
         let (pcs_pp, pcs_vp) = Pcs::trim(param, poly_size, batch_size)?;
 
+        let num_vars = circuit_info.num_vars;
         // Compute preprocesses comms
         let preprocess_polys = circuit_info
             .preprocess_polys
@@ -152,6 +154,7 @@ where
             lookup_points_offset,
             num_permutation_z_polys,
             num_vars,
+            max_poly_num_vars,
             expression: expression.clone(),
             preprocess_comms: preprocess_comms.clone(),
             permutation_comms: circuit_info
@@ -170,6 +173,7 @@ where
             lookup_points_offset,
             num_permutation_z_polys,
             num_vars,
+            max_poly_num_vars,
             expression,
             preprocess_polys,
             preprocess_comms,
@@ -279,7 +283,16 @@ where
         )?;
 
         // PCS open
-        let polys = iter::empty().chain(polys).chain(lookup_polys.iter());
+        let mut polys = iter::empty()
+            .chain(polys.into_iter().map(|poly| poly.clone()))
+            .chain(lookup_polys.into_iter())
+            .collect_vec();
+        // Currently batch opening does not support different sizes of polynomials
+        // For now, pad the polynomials to the maximum size. Later, update the algorithm to
+        // support different sizes of polynomials
+        polys.iter_mut().for_each(|poly| {
+            poly.resize(pp.max_poly_num_vars);
+        });
         let dummy_comm = Pcs::Commitment::default();
         let comms = iter::empty()
             .chain(iter::repeat(&dummy_comm).take(pp.num_instances.len()))
@@ -289,16 +302,21 @@ where
             .chain(&permutation_z_comms)
             .chain(lookup_comms.iter())
             .collect_vec();
-        let points = iter::empty()
+        let mut points = iter::empty()
             .chain(points)
             .chain(lookup_opening_points)
             .collect_vec();
+        points.iter_mut().for_each(|point| {
+            if point.len() < pp.max_poly_num_vars {
+                point.resize(pp.max_poly_num_vars, F::ZERO);
+            }
+        });
         let evals = iter::empty()
             .chain(evals)
             .chain(lookup_opening_evals)
             .collect_vec();
         let timer = start_timer(|| format!("pcs_batch_open-{}", evals.len()));
-        Pcs::batch_open(&pp.pcs, polys, comms, &points, &evals, transcript)?;
+        Pcs::batch_open(&pp.pcs, polys.iter(), comms, &points, &evals, transcript)?;
         end_timer(timer);
         Ok(())
     }
@@ -370,10 +388,15 @@ where
             .chain(&permutation_z_comms)
             .chain(lookup_comms.iter())
             .collect_vec();
-        let points = iter::empty()
+        let mut points = iter::empty()
             .chain(points)
             .chain(lookup_opening_points)
             .collect_vec();
+        points.iter_mut().for_each(|point| {
+            if point.len() < vp.max_poly_num_vars {
+                point.resize(vp.max_poly_num_vars, F::ZERO);
+            }
+        });
         let evals = iter::empty()
             .chain(evals)
             .chain(lookup_opening_evals)

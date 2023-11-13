@@ -1,6 +1,6 @@
 pub use aggregation::AggregationCircuit;
-pub use sha256::Sha256Circuit;
 pub use range::RangeCircuit;
+pub use sha256::Sha256Circuit;
 
 mod aggregation {
     use halo2_proofs::{
@@ -481,7 +481,7 @@ mod sha256 {
 
 mod range {
     use halo2::halo2curves::ff::PrimeField;
-    use halo2_proofs::circuit::{SimpleFloorPlanner, Layouter, Value};
+    use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
     use halo2wrong::*;
     use itertools::Itertools;
@@ -585,15 +585,17 @@ mod range {
 
     impl CircuitExt<Fr> for RangeCircuit {
         fn rand(k: usize, mut rng: impl RngCore) -> Self {
-            let inputs = vec![(); 1 << 16].iter().map(|_| {
-                let value = Fr::from_u128((rng.next_u64() as usize).pow(2) as u128);
-                Input {
-                    bit_len: 128,
-                    limb_bit_len: 8,
-                    value: Value::known(value)
-                }
-            })
-            .collect_vec();
+            let inputs = vec![(); 1 << 16]
+                .iter()
+                .map(|_| {
+                    let value = Fr::from_u128((rng.next_u64() as usize).pow(2) as u128);
+                    Input {
+                        bit_len: 128,
+                        limb_bit_len: 8,
+                        value: Value::known(value),
+                    }
+                })
+                .collect_vec();
             Self { inputs }
         }
 

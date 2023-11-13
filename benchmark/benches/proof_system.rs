@@ -1,6 +1,6 @@
 use benchmark::{
     espresso,
-    halo2::{AggregationCircuit, Sha256Circuit, RangeCircuit},
+    halo2::{AggregationCircuit, RangeCircuit, Sha256Circuit},
 };
 use espresso_hyperplonk::{prelude::MockCircuit, HyperPlonkSNARK};
 use espresso_subroutines::{MultilinearKzgPCS, PolyIOP, PolynomialCommitmentScheme};
@@ -177,7 +177,9 @@ impl System {
     fn support(&self, circuit: Circuit) -> bool {
         match self {
             System::HyperPlonk | System::Halo2 => match circuit {
-                Circuit::VanillaPlonk | Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => true,
+                Circuit::VanillaPlonk | Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => {
+                    true
+                }
             },
             System::EspressoHyperPlonk => match circuit {
                 Circuit::VanillaPlonk => true,
