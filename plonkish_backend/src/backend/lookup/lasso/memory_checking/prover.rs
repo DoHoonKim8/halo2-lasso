@@ -167,7 +167,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
         );
         let x_offset = points_offset + lookup_opening_points.len();
         let y_offset = x_offset + 1;
-        let (dim_xs, read_ts_poly_xs, final_cts_poly_xs, e_poly_xs) = self
+        let (dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs) = self
             .chunks
             .iter()
             .map(|chunk| {
@@ -200,7 +200,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
         let opening_evals = chain!(
             dim_xs,
             read_ts_poly_xs,
-            final_cts_poly_xs,
+            final_cts_poly_ys,
             e_poly_xs.concat()
         )
         .collect_vec();
