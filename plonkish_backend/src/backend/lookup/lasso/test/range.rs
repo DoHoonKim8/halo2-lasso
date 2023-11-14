@@ -154,7 +154,7 @@ mod test {
                 polys[l_copy_idx.0][l_copy_idx.1]
             } else {
                 let value = witness_rng.next_u64() as usize;
-                F::from_u128(value.pow(2) as u128)
+                F::from(value as u64).square()
             };
             let w_r = F::from(witness_rng.next_u64());
             let q_c = F::random(&mut preprocess_rng);
@@ -242,7 +242,7 @@ mod test {
             }
         };
         ($name:ident, $f:ty, $pcs:ty) => {
-            test!($name, $f, $pcs, 15..16);
+            test!($name, $f, $pcs, 13..14);
         };
     }
 

@@ -1,10 +1,6 @@
-use benchmark::{
-    espresso,
-    halo2::{AggregationCircuit, RangeCircuit, Sha256Circuit},
-};
-use espresso_hyperplonk::{prelude::MockCircuit, HyperPlonkSNARK};
-use espresso_subroutines::{MultilinearKzgPCS, PolyIOP, PolynomialCommitmentScheme};
+use benchmark::halo2::{AggregationCircuit, RangeCircuit, Sha256Circuit};
 use halo2_proofs::{
+    dev::MockProver,
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
     poly::kzg::{
         commitment::ParamsKZG,
@@ -61,7 +57,7 @@ fn bench_hyperplonk<C: CircuitExt<Fr>>(k: usize) {
     let (pp, vp) = HyperPlonk::preprocess(&param, &circuit_info).unwrap();
     end_timer(timer);
 
-    let proof = sample(System::HyperPlonk, k, || {
+    let proof = sample(System::HyperPlonkLasso, k, || {
         let _timer = start_timer(|| format!("hyperplonk_prove-{k}"));
         let mut transcript = Keccak256Transcript::default();
         HyperPlonk::prove(&pp, &circuit, &mut transcript, std_rng()).unwrap();
@@ -76,12 +72,17 @@ fn bench_hyperplonk<C: CircuitExt<Fr>>(k: usize) {
     assert!(accept);
 }
 
-fn bench_halo2<C: CircuitExt<Fr>>(k: usize) {
+// TODO : Update to bench PseHalo2
+fn bench_pse_halo2<C: CircuitExt<Fr>>(k: usize) {
     let circuit = C::rand(k, std_rng());
     let circuits = &[circuit];
     let instances = circuits[0].instances();
     let instances = instances.iter().map(Vec::as_slice).collect_vec();
     let instances = [instances.as_slice()];
+
+    MockProver::run::<C, false>(k as u32, &circuits[0], vec![])
+        .unwrap()
+        .assert_satisfied();
 
     let timer = start_timer(|| format!("halo2_setup-{k}"));
     let param = ParamsKZG::<Bn256>::setup(k as u32, std_rng());
@@ -99,7 +100,7 @@ fn bench_halo2<C: CircuitExt<Fr>>(k: usize) {
     let verify_proof =
         |c, d, e| verify_proof::<_, VerifierGWC<_>, _, _, _, false>(&param, pk.get_vk(), c, d, e);
 
-    let proof = sample(System::Halo2, k, || {
+    let proof = sample(System::PseHalo2, k, || {
         let _timer = start_timer(|| format!("halo2_prove-{k}"));
         let transcript = Blake2bWrite::init(Vec::new());
         create_proof(circuits, &instances, std_rng(), transcript)
@@ -114,52 +115,19 @@ fn bench_halo2<C: CircuitExt<Fr>>(k: usize) {
     assert!(accept);
 }
 
-fn bench_espresso_hyperplonk(circuit: MockCircuit<ark_bn254::Fr>) {
-    macro_rules! hyperplonk {
-        ($func:ident($($args:expr),*)) => {
-            <PolyIOP<ark_bn254::Fr> as HyperPlonkSNARK<ark_bn254::Bn254, MultilinearKzgPCS<ark_bn254::Bn254>>>::$func($($args),*)
-        };
-    }
-
-    let k = circuit.num_variables();
-    let MockCircuit {
-        index,
-        public_inputs,
-        witnesses,
-        ..
-    } = &circuit;
-
-    let timer = start_timer(|| format!("espresso_hyperplonk_setup-{k}"));
-    let param = MultilinearKzgPCS::gen_srs_for_testing(&mut std_rng(), k).unwrap();
-    end_timer(timer);
-
-    let timer = start_timer(|| format!("espresso_hyperplonk_preprocess-{k}"));
-    let (pk, vk) = hyperplonk!(preprocess(index, &param)).unwrap();
-    end_timer(timer);
-
-    let proof = sample(System::EspressoHyperPlonk, k, || {
-        let _timer = start_timer(|| format!("espresso_hyperplonk_prove-{k}"));
-        hyperplonk!(prove(&pk, public_inputs, witnesses)).unwrap()
-    });
-
-    let _timer = start_timer(|| format!("espresso_hyperplonk_verify-{k}"));
-    let accept = hyperplonk!(verify(&vk, public_inputs, &proof)).unwrap();
-    assert!(accept);
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum System {
-    HyperPlonk,
-    Halo2,
-    EspressoHyperPlonk,
+    /// HyperPlonk + Lasso
+    HyperPlonkLasso,
+    /// Plonk + Subset
+    PseHalo2,
 }
 
 impl System {
     fn all() -> Vec<System> {
         vec![
-            System::HyperPlonk,
-            System::Halo2,
-            System::EspressoHyperPlonk,
+            System::HyperPlonkLasso,
+            System::PseHalo2,
         ]
     }
 
@@ -176,14 +144,14 @@ impl System {
 
     fn support(&self, circuit: Circuit) -> bool {
         match self {
-            System::HyperPlonk | System::Halo2 => match circuit {
+            System::PseHalo2 => match circuit {
                 Circuit::VanillaPlonk | Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => {
                     true
                 }
             },
-            System::EspressoHyperPlonk => match circuit {
-                Circuit::VanillaPlonk => true,
-                Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => false,
+            System::HyperPlonkLasso => match circuit {
+                Circuit::Range => true,
+                _ => false,
             },
         }
     }
@@ -197,22 +165,17 @@ impl System {
         println!("start benchmark on 2^{k} {circuit} with {self}");
 
         match self {
-            System::HyperPlonk => match circuit {
-                Circuit::VanillaPlonk => bench_hyperplonk::<VanillaPlonk<Fr>>(k),
-                Circuit::Aggregation => bench_hyperplonk::<AggregationCircuit<Bn256>>(k),
-                Circuit::Sha256 => bench_hyperplonk::<Sha256Circuit>(k),
-                Circuit::Range => unimplemented!(),
+            System::PseHalo2 => match circuit {
+                Circuit::VanillaPlonk => bench_pse_halo2::<VanillaPlonk<Fr>>(k),
+                Circuit::Aggregation => bench_pse_halo2::<AggregationCircuit<Bn256>>(k),
+                Circuit::Sha256 => bench_pse_halo2::<Sha256Circuit>(k),
+                Circuit::Range => bench_pse_halo2::<RangeCircuit>(k),
             },
-            System::Halo2 => match circuit {
-                Circuit::VanillaPlonk => bench_halo2::<VanillaPlonk<Fr>>(k),
-                Circuit::Aggregation => bench_halo2::<AggregationCircuit<Bn256>>(k),
-                Circuit::Sha256 => bench_halo2::<Sha256Circuit>(k),
-                Circuit::Range => bench_halo2::<RangeCircuit>(k),
-            },
-            System::EspressoHyperPlonk => match circuit {
-                Circuit::VanillaPlonk => bench_espresso_hyperplonk(espresso::vanilla_plonk(k)),
-                Circuit::Aggregation | Circuit::Sha256 | Circuit::Range => unreachable!(),
-            },
+            System::HyperPlonkLasso => match circuit {
+                Circuit::Range => bench_hyperplonk::<RangeCircuit>(k),
+                _ => unreachable!(),
+            }
+            _ => unimplemented!(),
         }
     }
 }
@@ -220,9 +183,8 @@ impl System {
 impl Display for System {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            System::HyperPlonk => write!(f, "hyperplonk"),
-            System::Halo2 => write!(f, "halo2"),
-            System::EspressoHyperPlonk => write!(f, "espresso_hyperplonk"),
+            System::HyperPlonkLasso => write!(f, "hyperplonk-lasso"),
+            System::PseHalo2 => write!(f, "pse-halo2"),
         }
     }
 }
@@ -264,12 +226,9 @@ fn parse_args() -> (Vec<System>, Circuit, Range<usize>) {
             match key.as_str() {
                 "--system" => match value.as_str() {
                     "all" => systems = System::all(),
-                    "hyperplonk" => systems.push(System::HyperPlonk),
-                    "halo2" => systems.push(System::Halo2),
-                    "espresso_hyperplonk" => systems.push(System::EspressoHyperPlonk),
-                    _ => panic!(
-                        "system should be one of {{all,hyperplonk,halo2,espresso_hyperplonk}}"
-                    ),
+                    "hyperplonk-lasso" => systems.push(System::HyperPlonkLasso),
+                    "pse-halo2" => systems.push(System::PseHalo2),
+                    _ => panic!("system should be one of {{all,hyperplonk-lasso,hyperplonk-logup,pse-halo2,scroll-halo2}}"),
                 },
                 "--circuit" => match value.as_str() {
                     "vanilla_plonk" => circuit = Circuit::VanillaPlonk,

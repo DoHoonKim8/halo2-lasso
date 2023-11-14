@@ -166,11 +166,7 @@ mod test {
                 [F::from(w_l), F::from(w_r), F::from(w_o)]
             };
 
-            let values = vec![
-                (6, w_l),
-                (7, w_r),
-                (8, w_o),
-            ];
+            let values = vec![(6, w_l), (7, w_r), (8, w_o)];
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
