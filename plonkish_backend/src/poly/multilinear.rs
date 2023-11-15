@@ -1,13 +1,14 @@
 use crate::{
     poly::Polynomial,
     util::{
-        arithmetic::{div_ceil, usize_from_bits_le, BooleanHypercube, Field},
+        arithmetic::{div_ceil, fe_from_le_bytes, usize_from_bits_le, BooleanHypercube, Field},
         expression::Rotation,
         impl_index,
         parallel::{num_threads, parallelize, parallelize_iter},
         BitIndex, Deserialize, Itertools, Serialize,
     },
 };
+use halo2_curves::ff::PrimeField;
 use num_integer::Integer;
 use rand::RngCore;
 use std::{
@@ -59,6 +60,16 @@ impl<F> MultilinearPolynomial<F> {
 
     pub fn iter(&self) -> impl Iterator<Item = &F> {
         self.evals.iter()
+    }
+}
+
+impl<F: PrimeField> MultilinearPolynomial<F> {
+    pub fn from_usize(evals: Vec<usize>) -> Self {
+        let evals = evals
+            .iter()
+            .map(|eval| fe_from_le_bytes(eval.to_le_bytes()))
+            .collect_vec();
+        Self::new(evals)
     }
 }
 
