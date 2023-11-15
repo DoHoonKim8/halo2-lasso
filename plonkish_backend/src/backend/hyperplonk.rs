@@ -234,6 +234,7 @@ where
             .chain(witness_polys.iter())
             .collect_vec();
 
+        let timer = start_timer(|| format!("prove-Lasso-lookup-{}", pp.num_vars));
         let mut lookup_opening_points = vec![];
         let mut lookup_opening_evals = vec![];
         let (lookup_polys, lookup_comms, lasso_challenges) = prove_lasso_lookup(
@@ -243,6 +244,8 @@ where
             &mut lookup_opening_evals,
             transcript,
         )?;
+        end_timer(timer);
+
         let [beta, gamma] = if pp.lasso_lookup.is_some() {
             lasso_challenges.try_into().unwrap()
         } else {

@@ -153,19 +153,19 @@ pub trait WitnessEncoding {
 }
 
 #[cfg(any(test, feature = "benchmark"))]
-mod mock {
+pub mod mock {
     use crate::{
         backend::{PlonkishCircuit, PlonkishCircuitInfo},
         Error,
     };
 
-    pub(crate) struct MockCircuit<F> {
+    pub struct MockCircuit<F> {
         instances: Vec<Vec<F>>,
         witnesses: Vec<Vec<F>>,
     }
 
     impl<F> MockCircuit<F> {
-        pub(crate) fn new(instances: Vec<Vec<F>>, witnesses: Vec<Vec<F>>) -> Self {
+        pub fn new(instances: Vec<Vec<F>>, witnesses: Vec<Vec<F>>) -> Self {
             Self {
                 instances,
                 witnesses,

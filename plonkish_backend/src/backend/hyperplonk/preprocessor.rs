@@ -51,9 +51,7 @@ pub(super) fn compose<F: PrimeField>(
     (num_permutation_z_polys, expression)
 }
 
-pub(super) fn max_degree<F: PrimeField>(
-    circuit_info: &PlonkishCircuitInfo<F>,
-) -> usize {
+pub(super) fn max_degree<F: PrimeField>(circuit_info: &PlonkishCircuitInfo<F>) -> usize {
     iter::empty()
         .chain(circuit_info.constraints.iter().map(Expression::degree))
         .chain(circuit_info.max_degree)
@@ -125,7 +123,7 @@ pub(crate) fn permutation_constraints<F: PrimeField>(
 
 pub(super) fn permutation_polys<F: PrimeField>(
     num_vars: usize,
-    permutation_polys: &[usize], // copy constraint에 참가하는 모든 polynomial들을 정렬해 놓은 것
+    permutation_polys: &[usize],
     cycles: &[Vec<(usize, usize)>],
 ) -> Vec<MultilinearPolynomial<F>> {
     let poly_index = {

@@ -1,4 +1,4 @@
-use benchmark::halo2::{AggregationCircuit, RangeCircuit, Sha256Circuit};
+use benchmark::{halo2::{AggregationCircuit, RangeCircuit, Sha256Circuit}, lasso::range_circuit};
 use halo2_proofs::{
     dev::MockProver,
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -40,13 +40,11 @@ fn main() {
     k_range.for_each(|k| systems.iter().for_each(|system| system.bench(k, circuit)));
 }
 
-fn bench_hyperplonk<C: CircuitExt<Fr>>(k: usize) {
+fn bench_lasso<C: CircuitExt<Fr>>(k: usize) {
     type MultilinearKzg = multilinear::MultilinearKzg<Bn256>;
     type HyperPlonk = backend::hyperplonk::HyperPlonk<MultilinearKzg>;
 
-    let circuit = C::rand(k, std_rng());
-    let circuit = Halo2Circuit::new::<HyperPlonk>(k, circuit);
-    let circuit_info = circuit.circuit_info().unwrap();
+    let (circuit_info, circuit) = range_circuit(k, std_rng());
     let instances = circuit.instances();
 
     let timer = start_timer(|| format!("hyperplonk_setup-{k}"));
@@ -72,7 +70,6 @@ fn bench_hyperplonk<C: CircuitExt<Fr>>(k: usize) {
     assert!(accept);
 }
 
-// TODO : Update to bench PseHalo2
 fn bench_pse_halo2<C: CircuitExt<Fr>>(k: usize) {
     let circuit = C::rand(k, std_rng());
     let circuits = &[circuit];
@@ -125,10 +122,7 @@ enum System {
 
 impl System {
     fn all() -> Vec<System> {
-        vec![
-            System::HyperPlonkLasso,
-            System::PseHalo2,
-        ]
+        vec![System::HyperPlonkLasso, System::PseHalo2]
     }
 
     fn output_path(&self) -> String {
@@ -172,9 +166,9 @@ impl System {
                 Circuit::Range => bench_pse_halo2::<RangeCircuit>(k),
             },
             System::HyperPlonkLasso => match circuit {
-                Circuit::Range => bench_hyperplonk::<RangeCircuit>(k),
+                Circuit::Range => bench_lasso::<RangeCircuit>(k),
                 _ => unreachable!(),
-            }
+            },
             _ => unimplemented!(),
         }
     }

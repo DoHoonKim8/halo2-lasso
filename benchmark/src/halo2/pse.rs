@@ -549,12 +549,12 @@ mod range {
                 let w = meta.query_advice(w, Rotation::cur());
                 let s_gate = meta.query_selector(s_gate);
 
-                let composed = [a2, a3, a4, a5, a6, a7, a8]
-                    .into_iter()
-                    .enumerate()
-                    .fold(a1, |acc, (i, expr)| {
+                let composed = [a2, a3, a4, a5, a6, a7, a8].into_iter().enumerate().fold(
+                    a1,
+                    |acc, (i, expr)| {
                         acc + expr * Expression::Constant(Fr::from(1 << (16 * (i + 1))))
-                    });
+                    },
+                );
                 vec![s_gate * (composed - w)]
             });
 
