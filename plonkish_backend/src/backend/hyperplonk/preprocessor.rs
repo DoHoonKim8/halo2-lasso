@@ -17,7 +17,7 @@ pub(super) fn batch_size<F: PrimeField>(circuit_info: &PlonkishCircuitInfo<F>) -
         circuit_info.num_witness_polys.clone(),
         [div_ceil(
             num_permutation_polys,
-            max_degree(circuit_info, None) - 1
+            max_degree(circuit_info) - 1
         )],
     ]
     .sum()
@@ -30,11 +30,7 @@ pub(super) fn compose<F: PrimeField>(
     let [beta, gamma, alpha] =
         &array::from_fn(|idx| Expression::<F>::Challenge(challenge_offset + idx));
 
-    // To use Lasso as lookup argument, we will run Sumcheck for Lasso seperately
-    // Will generalize this function later
-    // let (lookup_constraints, lookup_zero_checks) = lookup_constraints(circuit_info, beta, gamma);
-
-    let max_degree = max_degree(circuit_info, None);
+    let max_degree = max_degree(circuit_info);
     let (num_permutation_z_polys, permutation_constraints) =
         permutation_constraints(circuit_info, max_degree, beta, gamma, 0);
 
@@ -53,51 +49,13 @@ pub(super) fn compose<F: PrimeField>(
 
 pub(super) fn max_degree<F: PrimeField>(
     circuit_info: &PlonkishCircuitInfo<F>,
-    lookup_constraints: Option<&[Expression<F>]>,
 ) -> usize {
-    // let lookup_constraints = lookup_constraints.map(Cow::Borrowed).unwrap_or_else(|| {
-    //     let dummy_challenge = Expression::zero();
-    //     Cow::Owned(self::lookup_constraints(circuit_info, &dummy_challenge, &dummy_challenge).0)
-    // });
     iter::empty()
         .chain(circuit_info.constraints.iter().map(Expression::degree))
         .chain(circuit_info.max_degree)
         .chain(Some(2))
         .max()
         .unwrap()
-}
-
-// LogUp lookup_constraints
-pub(super) fn lookup_constraints<F: PrimeField>(
-    circuit_info: &PlonkishCircuitInfo<F>,
-    beta: &Expression<F>,
-    gamma: &Expression<F>,
-) -> (Vec<Expression<F>>, Vec<Expression<F>>) {
-    let m_offset = circuit_info.num_poly() + circuit_info.permutation_polys().len();
-    let h_offset = m_offset + circuit_info.lookups.len();
-    let constraints = circuit_info
-        .lookups
-        .iter()
-        .zip(m_offset..)
-        .zip(h_offset..)
-        .flat_map(|((lookup, m), h)| {
-            let [m, h] = &[m, h]
-                .map(|poly| Query::new(poly, Rotation::cur()))
-                .map(Expression::<F>::Polynomial);
-            let (inputs, tables) = lookup
-                .iter()
-                .map(|(input, table)| (input, table))
-                .unzip::<_, _, Vec<_>, Vec<_>>();
-            let input = &Expression::distribute_powers(inputs, beta);
-            let table = &Expression::distribute_powers(tables, beta);
-            [h * (input + gamma) * (table + gamma) - (table + gamma) + m * (input + gamma)]
-        })
-        .collect_vec();
-    let sum_check = (h_offset..)
-        .take(circuit_info.lookups.len())
-        .map(|h| Query::new(h, Rotation::cur()).into())
-        .collect_vec();
-    (constraints, sum_check)
 }
 
 pub(crate) fn permutation_constraints<F: PrimeField>(

@@ -46,7 +46,6 @@ where
     pub(crate) num_instances: Vec<usize>,
     pub(crate) num_witness_polys: Vec<usize>,
     pub(crate) num_challenges: Vec<usize>,
-    pub(crate) lookups: Vec<Vec<(Expression<F>, Expression<F>)>>,
     /// assume we have at most Just One Lookup Table
     pub(crate) lasso_lookup: Option<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
     pub(crate) lookup_polys_offset: usize,
@@ -166,7 +165,6 @@ where
             num_instances: circuit_info.num_instances.clone(),
             num_witness_polys: circuit_info.num_witness_polys.clone(),
             num_challenges: circuit_info.num_challenges.clone(),
-            lookups: circuit_info.lookups.clone(),
             lasso_lookup: circuit_info.lasso_lookup.clone(),
             lookup_polys_offset,
             lookup_points_offset,

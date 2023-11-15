@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub mod lasso;
-pub mod logup;
 
 pub struct MVLookupStrategyOutput<
     F: Field,

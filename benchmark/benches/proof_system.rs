@@ -15,7 +15,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use plonkish_backend::{
-    backend::{self, lookup::logup, PlonkishBackend, PlonkishCircuit},
+    backend::{self, PlonkishBackend, PlonkishCircuit},
     frontend::halo2::{circuit::VanillaPlonk, CircuitExt, Halo2Circuit},
     halo2_curves::bn256::{Bn256, Fr},
     pcs::multilinear,

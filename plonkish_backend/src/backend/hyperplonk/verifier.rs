@@ -14,10 +14,7 @@ use crate::{
     },
     Error,
 };
-use std::{
-    collections::{BTreeSet, HashMap},
-    iter,
-};
+use std::collections::{BTreeSet, HashMap};
 
 use super::HyperPlonkVerifierParam;
 
