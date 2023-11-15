@@ -121,7 +121,6 @@ impl<
     }
 
     fn prepare_memory_checking(
-        points_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
     ) -> Vec<MemoryCheckingVerifier<F>> {
         let chunks = Self::chunks(table);
@@ -159,7 +158,7 @@ impl<
         tau: &F,
         transcript: &mut impl FieldTranscriptRead<F>,
     ) -> Result<(), Error> {
-        let memory_checking = Self::prepare_memory_checking(points_offset, table);
+        let memory_checking = Self::prepare_memory_checking(table);
         memory_checking
             .iter()
             .map(|memory_checking| {

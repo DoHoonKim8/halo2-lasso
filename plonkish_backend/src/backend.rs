@@ -4,7 +4,7 @@ use crate::{
         arithmetic::Field,
         expression::Expression,
         transcript::{TranscriptRead, TranscriptWrite},
-        Deserialize, DeserializeOwned, Itertools, Serialize,
+        Itertools,
     },
     Error,
 };
