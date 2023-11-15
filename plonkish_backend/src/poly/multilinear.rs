@@ -99,6 +99,19 @@ impl<F: Field> Polynomial<F> for MultilinearPolynomial<F> {
 }
 
 impl<F: Field> MultilinearPolynomial<F> {
+    /// creates new multilinear polynomial padded with the same evaluations to the given size
+    pub fn resize(&mut self, num_vars: usize) {
+        if self.num_vars < num_vars {
+            self.evals = iter::repeat_with(|| &self.evals)
+                .cloned()
+                .take(1 << (num_vars - self.num_vars))
+                .flatten()
+                .collect();
+            assert_eq!(self.evals.len(), 1 << num_vars);
+            self.num_vars = num_vars;
+        }
+    }
+
     pub fn eq_xy(y: &[F]) -> Self {
         if y.is_empty() {
             return Self::zero();

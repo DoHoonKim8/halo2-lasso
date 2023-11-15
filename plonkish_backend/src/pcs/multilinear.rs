@@ -147,6 +147,23 @@ mod additive {
     {
         validate_input("batch open", num_vars, polys.clone(), points)?;
 
+        if cfg!(feature = "sanity-check") {
+            for (idx, eval) in evals.iter().enumerate() {
+                assert_eq!(
+                    &comms[eval.poly()],
+                    &&Pcs::commit(pp, polys[eval.poly()]).unwrap(),
+                    "{}",
+                    eval.poly()
+                );
+                assert_eq!(
+                    *eval.value(),
+                    polys[eval.poly()].evaluate(&points[eval.point()]),
+                    "{}",
+                    eval.poly()
+                );
+            }
+        }
+
         let ell = evals.len().next_power_of_two().ilog2() as usize;
         let t = transcript.squeeze_challenges(ell);
 

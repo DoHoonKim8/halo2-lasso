@@ -48,8 +48,12 @@ pub trait PlonkishBackend<F: Field>: Clone + Debug {
 
 #[derive(Clone, Debug)]
 pub struct PlonkishCircuitInfo<F> {
-    /// 2^k is the size of the circuit
+    /// 2^k is the maximum size of polynomials.
+    /// This can be different from `num_vars`, because of some intermediate polynomials
+    /// that is generated during proving lookup.
     pub k: usize,
+    /// 2^{num_vars} is the size of the circuit
+    pub num_vars: usize,
     /// Number of instnace value in each instance polynomial.
     pub num_instances: Vec<usize>,
     /// Preprocessed polynomials, which has index starts with offset
@@ -149,19 +153,19 @@ pub trait WitnessEncoding {
 }
 
 #[cfg(any(test, feature = "benchmark"))]
-mod mock {
+pub mod mock {
     use crate::{
         backend::{PlonkishCircuit, PlonkishCircuitInfo},
         Error,
     };
 
-    pub(crate) struct MockCircuit<F> {
+    pub struct MockCircuit<F> {
         instances: Vec<Vec<F>>,
         witnesses: Vec<Vec<F>>,
     }
 
     impl<F> MockCircuit<F> {
-        pub(crate) fn new(instances: Vec<Vec<F>>, witnesses: Vec<Vec<F>>) -> Self {
+        pub fn new(instances: Vec<Vec<F>>, witnesses: Vec<Vec<F>>) -> Self {
             Self {
                 instances,
                 witnesses,
