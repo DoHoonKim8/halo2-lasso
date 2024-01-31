@@ -268,7 +268,7 @@ pub(super) fn prove_lasso_lookup<
 
     // memory_checking
     LassoProver::<F, Pcs>::memory_checking(
-        pp.lookup_points_offset,
+        pp,
         lookup_opening_points,
         lookup_opening_evals,
         table,

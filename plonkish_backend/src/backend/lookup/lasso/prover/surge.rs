@@ -46,7 +46,7 @@ impl<
         }
     }
 
-    pub fn nz(&'_ self) -> Vec<&[usize]> {
+    pub fn nz(&self) -> Vec<&[usize]> {
         self.lookup_indices
             .iter()
             .map(|lookup_indices| lookup_indices.as_slice())

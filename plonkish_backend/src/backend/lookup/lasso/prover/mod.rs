@@ -339,7 +339,7 @@ impl<
     }
 
     pub fn memory_checking<'a>(
-        points_offset: usize,
+        pp: &HyperPlonkProverParam<F, Pcs>,
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
@@ -352,7 +352,7 @@ impl<
         tau: &F,
         transcript: &mut impl FieldTranscriptWrite<F>,
     ) -> Result<(), Error> {
-        let mut memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
+        let memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
             &table,
             &subtable_polys,
             &dims,
@@ -364,10 +364,10 @@ impl<
         );
 
         memory_checking
-            .iter_mut()
+            .iter()
             .map(|memory_checking| {
                 memory_checking.prove(
-                    points_offset,
+                    pp.lookup_points_offset + lookup_opening_points.len(),
                     lookup_opening_points,
                     lookup_opening_evals,
                     transcript,

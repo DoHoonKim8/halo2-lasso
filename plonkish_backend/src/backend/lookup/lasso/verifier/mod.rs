@@ -11,7 +11,7 @@ use crate::{
     },
     poly::multilinear::MultilinearPolynomial,
     util::transcript::{FieldTranscriptRead, TranscriptRead},
-    Error,
+    Error, backend::hyperplonk::HyperPlonkVerifierParam,
 };
 
 use super::{
@@ -55,10 +55,8 @@ impl<
     }
 
     pub fn verify_sum_check(
+        vp: &HyperPlonkVerifierParam<F, Pcs>,
         table: &Box<dyn DecomposableTable<F>>,
-        num_vars: usize,
-        polys_offset: usize,
-        points_offset: usize,
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
         r: &[F],
@@ -68,7 +66,7 @@ impl<
         let claim = transcript.read_field_element()?;
         let (_, x) = ClassicSumCheck::<EvaluationsProver<_>>::verify(
             &(),
-            num_vars,
+            vp.num_vars,
             expression.degree(),
             claim,
             transcript,
@@ -76,14 +74,14 @@ impl<
         lookup_opening_points.extend_from_slice(&[r.to_vec(), x]);
 
         let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
-        let e_polys_offset = polys_offset + 1 + table.chunk_bits().len() * 3;
+        let e_polys_offset = vp.lookup_polys_offset + 1 + table.chunk_bits().len() * 3;
         let evals = pcs_query
             .iter()
             .map(|query| {
                 let value = transcript.read_field_element().unwrap();
-                Evaluation::new(e_polys_offset + query.poly(), points_offset + 1, value)
+                Evaluation::new(e_polys_offset + query.poly(), vp.lookup_points_offset + 1, value)
             })
-            .chain([Evaluation::new(polys_offset, points_offset, claim)])
+            .chain([Evaluation::new(vp.lookup_polys_offset, vp.lookup_points_offset, claim)])
             .collect_vec();
         lookup_opening_evals.extend_from_slice(&evals);
         Ok(())
@@ -148,9 +146,7 @@ impl<
     }
 
     pub fn memory_checking(
-        num_reads: usize,
-        polys_offset: usize,
-        points_offset: usize,
+        vp: &HyperPlonkVerifierParam<F, Pcs>,
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
@@ -164,9 +160,9 @@ impl<
             .map(|memory_checking| {
                 memory_checking.verify(
                     table.chunk_bits().len(),
-                    num_reads,
-                    polys_offset,
-                    points_offset,
+                    vp.num_vars,
+                    vp.lookup_polys_offset,
+                    vp.lookup_points_offset,
                     &gamma,
                     &tau,
                     lookup_opening_points,

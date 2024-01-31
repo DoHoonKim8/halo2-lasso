@@ -12,7 +12,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonkish_backend::{
     backend::{self, PlonkishBackend, PlonkishCircuit},
-    frontend::halo2::{circuit::VanillaPlonk, CircuitExt, Halo2Circuit},
+    frontend::halo2::{circuit::VanillaPlonk, CircuitExt},
     halo2_curves::bn256::{Bn256, Fr},
     pcs::multilinear,
     util::{
@@ -40,7 +40,7 @@ fn main() {
     k_range.for_each(|k| systems.iter().for_each(|system| system.bench(k, circuit)));
 }
 
-fn bench_lasso<C: CircuitExt<Fr>>(k: usize) {
+fn bench_lasso(k: usize) {
     type MultilinearKzg = multilinear::MultilinearKzg<Bn256>;
     type HyperPlonk = backend::hyperplonk::HyperPlonk<MultilinearKzg>;
 
@@ -166,7 +166,7 @@ impl System {
                 Circuit::Range => bench_pse_halo2::<RangeCircuit>(k),
             },
             System::HyperPlonkLasso => match circuit {
-                Circuit::Range => bench_lasso::<RangeCircuit>(k),
+                Circuit::Range => bench_lasso(k),
                 _ => unreachable!(),
             },
             _ => unimplemented!(),
