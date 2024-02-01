@@ -151,6 +151,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
 
         Ok(PlonkishCircuitInfo {
             k: *k as usize,
+            num_vars: *k as usize,
             num_instances,
             preprocess_polys,
             num_witness_polys: num_by_phase(&cs.advice_column_phase()),

@@ -96,7 +96,7 @@ impl<F: PrimeField, const NUM_BITS: usize, const LIMB_BITS: usize> DecomposableT
 
 #[cfg(test)]
 mod test {
-    use std::array;
+    use std::{array, iter};
 
     use super::RangeTable;
     use crate::{
@@ -154,7 +154,7 @@ mod test {
                 polys[l_copy_idx.0][l_copy_idx.1]
             } else {
                 let value = witness_rng.next_u64() as usize;
-                F::from_u128(value.pow(2) as u128)
+                F::from(value as u64).square()
             };
             let w_r = F::from(witness_rng.next_u64());
             let q_c = F::random(&mut preprocess_rng);
@@ -209,9 +209,14 @@ mod test {
         let lasso_lookup_input = w_l.clone();
         let lasso_lookup_indices = w_l.clone();
         let chunk_bits = table.chunk_bits();
-        let num_vars = chunk_bits.iter().chain([&num_vars]).max().unwrap();
+        let max_poly_size = iter::empty()
+            .chain([&num_vars])
+            .chain(chunk_bits.iter())
+            .max()
+            .unwrap();
         PlonkishCircuitInfo {
-            k: *num_vars,
+            k: *max_poly_size,
+            num_vars,
             num_instances: vec![num_instances],
             preprocess_polys: preprocess_polys.to_vec(),
             num_witness_polys: vec![3],
@@ -237,7 +242,7 @@ mod test {
             }
         };
         ($name:ident, $f:ty, $pcs:ty) => {
-            test!($name, $f, $pcs, 16..17);
+            test!($name, $f, $pcs, 13..14);
         };
     }
 

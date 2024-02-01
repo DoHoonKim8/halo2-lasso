@@ -12,8 +12,6 @@ use crate::{
 use super::MemoryGKR;
 
 pub struct MemoryCheckingProver<'a, F: PrimeField> {
-    /// offset of MemoryCheckingProver instance opening points
-    points_offset: usize,
     /// chunks with the same bits size
     chunks: Vec<Chunk<'a, F>>,
     /// GKR initial polynomials for each memory
@@ -24,7 +22,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
     // T_1[dim_1(x)], ..., T_k[dim_1(x)],
     // ...
     // T_{\alpha-k+1}[dim_c(x)], ..., T_{\alpha}[dim_c(x)]
-    pub fn new(points_offset: usize, chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
+    pub fn new(chunks: Vec<Chunk<'a, F>>, tau: &F, gamma: &F) -> Self {
         let num_reads = chunks[0].num_reads();
         let memory_size = 1 << chunks[0].chunk_bits();
 
@@ -34,14 +32,11 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             .into_par_iter()
             .flat_map(|i| {
                 let chunk = &chunks[i];
-                let chunk_polys = chunk.chunk_polys().collect_vec();
-                let (dim, read_ts_poly, final_cts_poly) =
-                    (chunk_polys[0], chunk_polys[1], chunk_polys[2]);
+                let [dim, read_ts_poly, final_cts_poly] = chunk.chunk_polys().collect_vec().try_into().unwrap();
                 chunk
                     .memories()
                     .map(|memory| {
-                        let memory_polys = memory.polys().collect_vec();
-                        let (subtable_poly, e_poly) = (memory_polys[0], memory_polys[1]);
+                        let [subtable_poly, e_poly] = memory.polys().collect_vec().try_into().unwrap();
                         let mut init = vec![];
                         let mut read = vec![];
                         let mut write = vec![];
@@ -70,7 +65,6 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             .collect();
 
         Self {
-            points_offset,
             chunks,
             memories: memories_gkr,
         }
@@ -143,7 +137,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
     }
 
     pub fn prove(
-        &mut self,
+        &self,
         points_offset: usize,
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
@@ -160,12 +154,7 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
             chain!(self.inits(), self.final_reads()),
             transcript,
         )?;
-
-        assert_eq!(
-            points_offset + lookup_opening_points.len(),
-            self.points_offset
-        );
-        let x_offset = points_offset + lookup_opening_points.len();
+        let x_offset = points_offset;
         let y_offset = x_offset + 1;
         let (dim_xs, read_ts_poly_xs, final_cts_poly_ys, e_poly_xs) = self
             .chunks

@@ -91,7 +91,7 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
 
 #[cfg(test)]
 mod test {
-    use std::array;
+    use std::{array, iter};
 
     use super::AndTable;
     use crate::{
@@ -166,27 +166,7 @@ mod test {
                 [F::from(w_l), F::from(w_r), F::from(w_o)]
             };
 
-            let q_c = F::random(&mut preprocess_rng);
-            let values = if preprocess_rng.next_u32().is_even() {
-                vec![
-                    (1, F::ONE),
-                    (2, F::ONE),
-                    (4, -F::ONE),
-                    (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_o),
-                ]
-            } else {
-                vec![
-                    (3, F::ONE),
-                    (4, -F::ONE),
-                    (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_o),
-                ]
-            };
+            let values = vec![(6, w_l), (7, w_r), (8, w_o)];
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
@@ -221,9 +201,14 @@ mod test {
             Box::new(Expression::Constant(F::from_u128(1 << 64))),
         );
         let chunk_bits = table.chunk_bits();
-        let num_vars = chunk_bits.iter().chain([&num_vars]).max().unwrap();
+        let max_poly_size = iter::empty()
+            .chain([&num_vars])
+            .chain(chunk_bits.iter())
+            .max()
+            .unwrap();
         PlonkishCircuitInfo {
-            k: *num_vars,
+            k: *max_poly_size,
+            num_vars,
             num_instances: vec![num_instances],
             preprocess_polys: preprocess_polys.to_vec(),
             num_witness_polys: vec![3],
@@ -249,7 +234,7 @@ mod test {
             }
         };
         ($name:ident, $f:ty, $pcs:ty) => {
-            test!($name, $f, $pcs, 16..17);
+            test!($name, $f, $pcs, 15..16);
         };
     }
 

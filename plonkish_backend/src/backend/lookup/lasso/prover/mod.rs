@@ -7,6 +7,7 @@ use halo2_curves::ff::{Field, PrimeField};
 use itertools::{chain, Itertools};
 
 use crate::{
+    backend::hyperplonk::HyperPlonkProverParam,
     pcs::{CommitmentChunk, Evaluation, PolynomialCommitmentScheme},
     poly::multilinear::MultilinearPolynomial,
     util::{
@@ -298,7 +299,6 @@ impl<
     }
 
     fn prepare_memory_checking<'a>(
-        points_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &'a [&MultilinearPolynomial<F>],
         dims: &'a [Poly<F>],
@@ -334,15 +334,12 @@ impl<
         chunk_map
             .into_iter()
             .enumerate()
-            .map(|(index, (_, chunks))| {
-                let points_offset = points_offset + 2 + 2 * index;
-                MemoryCheckingProver::new(points_offset, chunks, tau, gamma)
-            })
+            .map(|(_, (_, chunks))| MemoryCheckingProver::new(chunks, tau, gamma))
             .collect_vec()
     }
 
     pub fn memory_checking<'a>(
-        points_offset: usize,
+        pp: &HyperPlonkProverParam<F, Pcs>,
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
@@ -355,8 +352,7 @@ impl<
         tau: &F,
         transcript: &mut impl FieldTranscriptWrite<F>,
     ) -> Result<(), Error> {
-        let mut memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
-            points_offset,
+        let memory_checking = LassoProver::<F, Pcs>::prepare_memory_checking(
             &table,
             &subtable_polys,
             &dims,
@@ -368,10 +364,10 @@ impl<
         );
 
         memory_checking
-            .iter_mut()
+            .iter()
             .map(|memory_checking| {
                 memory_checking.prove(
-                    points_offset,
+                    pp.lookup_points_offset + lookup_opening_points.len(),
                     lookup_opening_points,
                     lookup_opening_evals,
                     transcript,
@@ -382,8 +378,7 @@ impl<
     }
 
     pub fn commit(
-        pp: &Pcs::ProverParam,
-        lookup_polys_offset: usize,
+        pp: &HyperPlonkProverParam<F, Pcs>,
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &[&MultilinearPolynomial<F>],
         lookup_input_poly: MultilinearPolynomial<F>,
@@ -393,14 +388,14 @@ impl<
         let num_chunks = table.chunk_bits().len();
 
         // commit to input_poly
-        let lookup_input_comm = Pcs::commit_and_write(&pp, &lookup_input_poly, transcript)?;
+        let lookup_input_comm = Pcs::commit_and_write(&pp.pcs, &lookup_input_poly, transcript)?;
 
         // get surge and dims
         let mut surge = Surge::<F, Pcs>::new();
 
         // commit to dims
         let dims = surge.commit(&table, lookup_nz_poly);
-        let dim_comms = Pcs::batch_commit_and_write(pp, &dims, transcript)?;
+        let dim_comms = Pcs::batch_commit_and_write(&pp.pcs, &dims, transcript)?;
 
         // get e_polys & read_ts_polys & final_cts_polys
         let e_polys = {
@@ -410,12 +405,12 @@ impl<
         let (read_ts_polys, final_cts_polys) = surge.counter_polys(&table);
 
         // commit to read_ts_polys & final_cts_polys & e_polys
-        let read_ts_comms = Pcs::batch_commit_and_write(&pp, &read_ts_polys, transcript)?;
-        let final_cts_comms = Pcs::batch_commit_and_write(&pp, &final_cts_polys, transcript)?;
-        let e_comms = Pcs::batch_commit_and_write(&pp, e_polys.as_slice(), transcript)?;
+        let read_ts_comms = Pcs::batch_commit_and_write(&pp.pcs, &read_ts_polys, transcript)?;
+        let final_cts_comms = Pcs::batch_commit_and_write(&pp.pcs, &final_cts_polys, transcript)?;
+        let e_comms = Pcs::batch_commit_and_write(&pp.pcs, e_polys.as_slice(), transcript)?;
 
         let lookup_input_poly = Poly {
-            offset: lookup_polys_offset,
+            offset: pp.lookup_polys_offset,
             poly: lookup_input_poly,
         };
 
@@ -423,7 +418,7 @@ impl<
             .into_iter()
             .enumerate()
             .map(|(chunk_index, dim)| Poly {
-                offset: lookup_polys_offset + 1 + chunk_index,
+                offset: pp.lookup_polys_offset + 1 + chunk_index,
                 poly: dim,
             })
             .collect_vec();
@@ -432,7 +427,7 @@ impl<
             .into_iter()
             .enumerate()
             .map(|(chunk_index, read_ts_poly)| Poly {
-                offset: lookup_polys_offset + 1 + num_chunks + chunk_index,
+                offset: pp.lookup_polys_offset + 1 + num_chunks + chunk_index,
                 poly: read_ts_poly,
             })
             .collect_vec();
@@ -441,7 +436,7 @@ impl<
             .into_iter()
             .enumerate()
             .map(|(chunk_index, final_cts_poly)| Poly {
-                offset: lookup_polys_offset + 1 + 2 * num_chunks + chunk_index,
+                offset: pp.lookup_polys_offset + 1 + 2 * num_chunks + chunk_index,
                 poly: final_cts_poly,
             })
             .collect_vec();
@@ -450,7 +445,7 @@ impl<
             .into_iter()
             .enumerate()
             .map(|(memory_index, e_poly)| Poly {
-                offset: lookup_polys_offset + 1 + 3 * num_chunks + memory_index,
+                offset: pp.lookup_polys_offset + 1 + 3 * num_chunks + memory_index,
                 poly: e_poly,
             })
             .collect_vec();

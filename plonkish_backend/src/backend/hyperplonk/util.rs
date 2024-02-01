@@ -34,6 +34,7 @@ pub fn vanilla_plonk_circuit_info<F: PrimeField>(
         &array::from_fn(|poly| Query::new(poly, Rotation::cur())).map(Expression::Polynomial);
     PlonkishCircuitInfo {
         k: num_vars,
+        num_vars,
         num_instances: vec![num_instances],
         preprocess_polys: preprocess_polys.to_vec(),
         num_witness_polys: vec![3],
@@ -68,6 +69,7 @@ pub fn vanilla_plonk_with_lookup_circuit_info<F: PrimeField>(
         &array::from_fn(|poly| Query::new(poly, Rotation::cur())).map(Expression::Polynomial);
     PlonkishCircuitInfo {
         k: num_vars,
+        num_vars,
         num_instances: vec![num_instances],
         preprocess_polys: preprocess_polys.to_vec(),
         num_witness_polys: vec![3],

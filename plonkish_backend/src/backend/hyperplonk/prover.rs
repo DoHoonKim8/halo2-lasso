@@ -230,8 +230,7 @@ pub(super) fn prove_lasso_lookup<
     let subtable_polys = subtable_polys.as_slice();
 
     let (lookup_polys, lookup_comms) = LassoProver::<F, Pcs>::commit(
-        &pp.pcs,
-        pp.lookup_polys_offset,
+        pp,
         &table,
         subtable_polys,
         lookup_input_poly,
@@ -269,7 +268,7 @@ pub(super) fn prove_lasso_lookup<
 
     // memory_checking
     LassoProver::<F, Pcs>::memory_checking(
-        pp.lookup_points_offset,
+        pp,
         lookup_opening_points,
         lookup_opening_evals,
         table,

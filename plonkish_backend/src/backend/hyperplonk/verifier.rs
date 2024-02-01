@@ -219,10 +219,8 @@ pub(super) fn verify_lasso_lookup<
     let r = transcript.squeeze_challenges(vp.num_vars);
 
     LassoVerifier::<F, Pcs>::verify_sum_check(
+        vp,
         lookup_table,
-        vp.num_vars,
-        vp.lookup_polys_offset,
-        vp.lookup_points_offset,
         lookup_opening_points,
         lookup_opening_evals,
         &r,
@@ -234,9 +232,7 @@ pub(super) fn verify_lasso_lookup<
 
     // memory checking
     LassoVerifier::<F, Pcs>::memory_checking(
-        vp.num_vars,
-        vp.lookup_polys_offset,
-        vp.lookup_points_offset,
+        vp,
         lookup_opening_points,
         lookup_opening_evals,
         lookup_table,

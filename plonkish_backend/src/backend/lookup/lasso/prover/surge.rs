@@ -46,7 +46,7 @@ impl<
         }
     }
 
-    pub fn nz(&'_ self) -> Vec<&[usize]> {
+    pub fn nz(&self) -> Vec<&[usize]> {
         self.lookup_indices
             .iter()
             .map(|lookup_indices| lookup_indices.as_slice())
@@ -66,7 +66,10 @@ impl<
             .map(|i| {
                 let mut index_bits = fe_to_bits_le(nz_poly[i]);
                 index_bits.truncate(table.chunk_bits().iter().sum());
-                assert_eq!(usize_from_bits_le(&fe_to_bits_le(nz_poly[i])), usize_from_bits_le(&index_bits));
+                assert_eq!(
+                    usize_from_bits_le(&fe_to_bits_le(nz_poly[i])),
+                    usize_from_bits_le(&index_bits)
+                );
 
                 let mut chunked_index = repeat(0).take(num_chunks).collect_vec();
                 let chunked_index_bits = table.subtable_indices(index_bits);
