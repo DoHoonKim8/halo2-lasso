@@ -122,9 +122,10 @@ impl<'a, F: PrimeField> MemoryCheckingProver<'a, F> {
                 let claimed_final_read_0 = final_read.iter().product();
 
                 // sanity check
-                assert_eq!(
+                debug_assert_eq!(
                     claimed_init_0 * claimed_write_0,
-                    claimed_read_0 * claimed_final_read_0
+                    claimed_read_0 * claimed_final_read_0,
+                    "Multiset hashes don't match",
                 );
                 (
                     Some(claimed_read_0),
