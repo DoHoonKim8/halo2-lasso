@@ -162,8 +162,8 @@ impl<
         )?;
 
         lookup_opening_points.extend_from_slice(&[r.to_vec(), x]);
-        let pcs_query = Self::pcs_query(&expression, 0);
-        let evals = pcs_query
+        let evals = expression
+            .used_query()
             .into_iter()
             .map(|query| {
                 transcript
@@ -218,11 +218,5 @@ impl<
         );
         let eq_xy = Expression::<F>::eq_xy(0);
         eq_xy * exprs
-    }
-
-    pub fn pcs_query(expression: &Expression<F>, offset: usize) -> BTreeSet<Query> {
-        let mut used_query = expression.used_query();
-        used_query.retain(|query| query.poly() >= offset);
-        used_query
     }
 }

@@ -6,7 +6,8 @@ use itertools::Itertools;
 use crate::{
     pcs::{Evaluation, PolynomialCommitmentScheme},
     piop::sum_check::{
-        classic::{ClassicSumCheck, EvaluationsProver}, evaluate, SumCheck
+        classic::{ClassicSumCheck, EvaluationsProver},
+        evaluate, SumCheck,
     },
     poly::multilinear::MultilinearPolynomial,
     util::transcript::{FieldTranscriptRead, TranscriptRead},
@@ -74,7 +75,7 @@ impl<
         )?;
         lookup_opening_points.extend_from_slice(&[r.to_vec(), x.clone()]);
 
-        let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
+        let pcs_query = expression.used_query();
         let evals = pcs_query
             .into_iter()
             .map(|query| {
