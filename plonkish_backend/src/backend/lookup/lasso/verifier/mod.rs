@@ -6,8 +6,7 @@ use itertools::Itertools;
 use crate::{
     pcs::{Evaluation, PolynomialCommitmentScheme},
     piop::sum_check::{
-        classic::{ClassicSumCheck, EvaluationsProver},
-        SumCheck,
+        classic::{ClassicSumCheck, EvaluationsProver}, evaluate, SumCheck
     },
     poly::multilinear::MultilinearPolynomial,
     util::transcript::{FieldTranscriptRead, TranscriptRead},
@@ -66,21 +65,33 @@ impl<
     ) -> Result<(), Error> {
         let expression = Surge::<F, Pcs>::sum_check_expression(&table);
         let claim = transcript.read_field_element()?;
-        let (_, x) = ClassicSumCheck::<EvaluationsProver<_>>::verify(
+        let (x_eval, x) = ClassicSumCheck::<EvaluationsProver<F>>::verify(
             &(),
             num_vars,
             expression.degree(),
             claim,
             transcript,
         )?;
-        lookup_opening_points.extend_from_slice(&[r.to_vec(), x]);
+        lookup_opening_points.extend_from_slice(&[r.to_vec(), x.clone()]);
 
         let pcs_query = Surge::<F, Pcs>::pcs_query(&expression, 0);
-        let e_polys_offset = polys_offset + 1 + table.chunk_bits().len() * 3;
         let evals = pcs_query
-            .iter()
+            .into_iter()
             .map(|query| {
                 let value = transcript.read_field_element().unwrap();
+                (query, value)
+            })
+            .collect();
+        if evaluate(&expression, num_vars, &evals, &[], &[r], &x) != x_eval {
+            return Err(Error::InvalidSnark(
+                "Unmatched between Lasso sum_check output and query evaluation".to_string(),
+            ));
+        }
+        let e_polys_offset = polys_offset + 1 + table.chunk_bits().len() * 3;
+        let evals = evals
+            .into_iter()
+            .sorted_by(|a, b| Ord::cmp(&a.0, &b.0))
+            .map(|(query, value)| {
                 Evaluation::new(e_polys_offset + query.poly(), points_offset + 1, value)
             })
             .chain([Evaluation::new(polys_offset, points_offset, claim)])
