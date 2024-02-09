@@ -51,9 +51,7 @@ pub(super) fn compose<F: PrimeField>(
     (num_permutation_z_polys, expression)
 }
 
-pub(super) fn max_degree<F: PrimeField>(
-    circuit_info: &PlonkishCircuitInfo<F>,
-) -> usize {
+pub(super) fn max_degree<F: PrimeField>(circuit_info: &PlonkishCircuitInfo<F>) -> usize {
     iter::empty()
         .chain(circuit_info.constraints.iter().map(Expression::degree))
         .chain(circuit_info.max_degree)

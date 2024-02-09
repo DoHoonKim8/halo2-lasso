@@ -5,7 +5,7 @@ use itertools::{izip, Itertools};
 
 use crate::{
     backend::lookup::lasso::DecomposableTable,
-    poly::multilinear::MultilinearPolynomial,
+    poly::multilinear::{MultilinearPolynomial, MultilinearPolynomialTerms, PolyExpr::*},
     util::{
         arithmetic::{inner_product, split_bits, split_by_chunk_bits},
         expression::Expression,
@@ -29,6 +29,7 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
 
     fn subtable_polys(&self) -> Vec<MultilinearPolynomial<F>> {
         let memory_size = 1 << 16;
+        println!("{}", self.num_memories());
         let mut evals = vec![];
         (0..memory_size).for_each(|i| {
             let (lhs, rhs) = split_bits(i, 8);
@@ -36,6 +37,22 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
             evals.push(result)
         });
         vec![MultilinearPolynomial::new(evals)]
+    }
+
+    fn subtable_polys_terms(&self) -> Vec<MultilinearPolynomialTerms<F>> {
+        let init = Prod(vec![Var(0), Var(self.num_memories())]);
+        let mut terms = vec![init];
+        (1..16).for_each(|i| {
+            let coeff = Pow(Box::new(Const(F::from(2))), i as u32);
+            let x = Var(i);
+            let y = Var(i + self.num_memories());
+            let term = Prod(vec![coeff, x, y]);
+            terms.push(term);
+        });
+        vec![MultilinearPolynomialTerms::new(
+            16,
+            Sum(terms),
+        )]
     }
 
     fn chunk_bits(&self) -> Vec<usize> {

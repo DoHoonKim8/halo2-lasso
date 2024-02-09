@@ -3,7 +3,8 @@ use std::{fmt::Debug, marker::PhantomData};
 use halo2_curves::ff::{Field, PrimeField};
 
 use crate::{
-    pcs::PolynomialCommitmentScheme, poly::multilinear::MultilinearPolynomial,
+    pcs::PolynomialCommitmentScheme,
+    poly::multilinear::{MultilinearPolynomial, MultilinearPolynomialTerms},
     util::expression::Expression,
 };
 
@@ -23,6 +24,7 @@ pub trait DecomposableTable<F: PrimeField>: Debug + Sync + DecomposableTableClon
 
     /// Returns multilinear extension polynomials of each subtable
     fn subtable_polys(&self) -> Vec<MultilinearPolynomial<F>>;
+    fn subtable_polys_terms(&self) -> Vec<MultilinearPolynomialTerms<F>>;
 
     fn combine_lookup_expressions(&self, expressions: Vec<Expression<F>>) -> Expression<F>;
 
