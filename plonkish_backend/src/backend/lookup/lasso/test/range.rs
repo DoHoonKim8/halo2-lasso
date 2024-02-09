@@ -90,10 +90,7 @@ impl<F: PrimeField, const NUM_BITS: usize, const LIMB_BITS: usize> DecomposableT
             let term = Prod(vec![coeff, x]);
             limb_terms.push(term);
         });
-        let limb_subtable_poly = MultilinearPolynomialTerms::new(
-            LIMB_BITS,
-            Sum(limb_terms),
-        );
+        let limb_subtable_poly = MultilinearPolynomialTerms::new(LIMB_BITS, Sum(limb_terms));
         if NUM_BITS % LIMB_BITS == 0 {
             vec![limb_subtable_poly]
         } else {
@@ -106,9 +103,11 @@ impl<F: PrimeField, const NUM_BITS: usize, const LIMB_BITS: usize> DecomposableT
                 let term = Prod(vec![coeff, x]);
                 rem_terms.push(term);
             });
-            vec![limb_subtable_poly, MultilinearPolynomialTerms::new(remainder, Sum(rem_terms))]
+            vec![
+                limb_subtable_poly,
+                MultilinearPolynomialTerms::new(remainder, Sum(rem_terms)),
+            ]
         }
-        
     }
 
     fn memory_to_chunk_index(&self, memory_index: usize) -> usize {

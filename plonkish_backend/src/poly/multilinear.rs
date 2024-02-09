@@ -56,21 +56,15 @@ impl<F: Field> PolyExpr<F> {
         match self {
             PolyExpr::Const(c) => c.clone(),
             PolyExpr::Var(i) => x[*i],
-            PolyExpr::Sum(v) => {
-                v.par_iter().map(|t| {
-                    t.evaluate(x)
-                }).reduce(|| F::ZERO, |acc, f| acc + f)
-            }
-            PolyExpr::Prod(v) => {
-                v.par_iter().map(|t| {
-                    t.evaluate(x)
-                }).reduce(|| F::ONE, |acc, f| acc * f)
-            }
-            PolyExpr::Pow(inner, e) => {
-                let res = inner.evaluate(x);
-                let exp = [*e as u64];
-                res.pow(exp)
-            }
+            PolyExpr::Sum(v) => v
+                .par_iter()
+                .map(|t| t.evaluate(x))
+                .reduce(|| F::ZERO, |acc, f| acc + f),
+            PolyExpr::Prod(v) => v
+                .par_iter()
+                .map(|t| t.evaluate(x))
+                .reduce(|| F::ONE, |acc, f| acc * f),
+            PolyExpr::Pow(inner, e) => inner.evaluate(x).pow([*e as u64]),
         }
     }
 }
