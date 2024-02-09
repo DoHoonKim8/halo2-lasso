@@ -6,7 +6,7 @@ use itertools::{chain, Itertools};
 use crate::{
     pcs::Evaluation,
     piop::gkr::verify_grand_product,
-    poly::multilinear::MultilinearPolynomial,
+    poly::multilinear::{MultilinearPolynomial, MultilinearPolynomialTerms},
     util::{arithmetic::inner_product, transcript::FieldTranscriptRead},
     Error,
 };
@@ -84,7 +84,7 @@ impl<F: PrimeField> Chunk<F> {
                 write_xs[i],
                 hash(&dim_x, &e_poly_xs[i], &(read_ts_poly_x + F::ONE))
             );
-            let subtable_poly_y = memory.subtable_poly.evaluate(y);
+            let subtable_poly_y = memory.subtable_poly_new.evaluate(y);
             assert_eq!(init_ys[i], hash(&id_poly_y, &subtable_poly_y, &F::ZERO));
             assert_eq!(
                 final_read_ys[i],
@@ -99,13 +99,19 @@ impl<F: PrimeField> Chunk<F> {
 pub(in crate::backend::lookup::lasso) struct Memory<F> {
     memory_index: usize,
     subtable_poly: MultilinearPolynomial<F>,
+    subtable_poly_new: MultilinearPolynomialTerms<F>,
 }
 
 impl<F> Memory<F> {
-    pub fn new(memory_index: usize, subtable_poly: MultilinearPolynomial<F>) -> Self {
+    pub fn new(
+        memory_index: usize,
+        subtable_poly: MultilinearPolynomial<F>,
+        s: MultilinearPolynomialTerms<F>,
+    ) -> Self {
         Self {
             memory_index,
             subtable_poly,
+            subtable_poly_new: s,
         }
     }
 }

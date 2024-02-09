@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{
     backend::lookup::lasso::DecomposableTable,
-    poly::multilinear::MultilinearPolynomial,
+    poly::multilinear::{MultilinearPolynomial, MultilinearPolynomialTerms, PolyExpr::*},
     util::{
         arithmetic::{div_ceil, inner_product},
         expression::Expression,
@@ -79,6 +79,36 @@ impl<F: PrimeField, const NUM_BITS: usize, const LIMB_BITS: usize> DecomposableT
         } else {
             vec![limb_subtable_poly]
         }
+    }
+
+    fn subtable_polys_terms(&self) -> Vec<MultilinearPolynomialTerms<F>> {
+        let limb_init = Var(0);
+        let mut limb_terms = vec![limb_init];
+        (1..LIMB_BITS).for_each(|i| {
+            let coeff = Pow(Box::new(Const(F::from(2))), i as u32);
+            let x = Var(i);
+            let term = Prod(vec![coeff, x]);
+            limb_terms.push(term);
+        });
+        let limb_subtable_poly = MultilinearPolynomialTerms::new(
+            LIMB_BITS,
+            Sum(limb_terms),
+        );
+        if NUM_BITS % LIMB_BITS == 0 {
+            vec![limb_subtable_poly]
+        } else {
+            let remainder = NUM_BITS % LIMB_BITS;
+            let rem_init = Var(0);
+            let mut rem_terms = vec![rem_init];
+            (1..remainder).for_each(|i| {
+                let coeff = Pow(Box::new(Const(F::from(2))), i as u32);
+                let x = Var(i);
+                let term = Prod(vec![coeff, x]);
+                rem_terms.push(term);
+            });
+            vec![limb_subtable_poly, MultilinearPolynomialTerms::new(remainder, Sum(rem_terms))]
+        }
+        
     }
 
     fn memory_to_chunk_index(&self, memory_index: usize) -> usize {
