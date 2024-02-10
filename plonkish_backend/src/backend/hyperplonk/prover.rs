@@ -220,9 +220,9 @@ pub(super) fn prove_lasso_lookup<
     }
     let lasso_lookup = pp.lasso_lookup.as_ref().unwrap();
     let (lookup, table) = ((&lasso_lookup.0, &lasso_lookup.1), &lasso_lookup.2);
-    let (lookup_input_poly, lookup_nz_poly) = LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
+    let (lookup_index_poly, lookup_output_poly) = LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
 
-    let num_vars = lookup_input_poly.num_vars();
+    let num_vars = lookup_output_poly.num_vars();
 
     // get subtable_polys
     let subtable_polys = table.subtable_polys();
@@ -234,8 +234,8 @@ pub(super) fn prove_lasso_lookup<
         pp.lookup_polys_offset,
         &table,
         subtable_polys,
-        lookup_input_poly,
-        &lookup_nz_poly,
+        lookup_output_poly,
+        &lookup_index_poly,
         transcript,
     )?;
 
@@ -243,7 +243,7 @@ pub(super) fn prove_lasso_lookup<
     // squeeze `r`
     let r = transcript.squeeze_challenges(num_vars);
 
-    let (input_poly, dims, read_ts_polys, final_cts_polys, e_polys) = (
+    let (lookup_output_poly, dims, read_ts_polys, final_cts_polys, e_polys) = (
         &lookup_polys[0][0],
         &lookup_polys[1],
         &lookup_polys[2],
@@ -256,7 +256,7 @@ pub(super) fn prove_lasso_lookup<
         lookup_opening_points,
         lookup_opening_evals,
         &table,
-        input_poly,
+        lookup_output_poly,
         &e_polys.iter().collect_vec(),
         &r,
         num_vars,

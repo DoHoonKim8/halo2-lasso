@@ -35,10 +35,10 @@ impl<
         table: &Box<dyn DecomposableTable<F>>,
         transcript: &mut impl TranscriptRead<Pcs::CommitmentChunk, F>,
     ) -> Result<Vec<Pcs::Commitment>, Error> {
-        // read input_comm, dim_comms
+        // read output_comm, dim_comms
         let num_chunks = table.chunk_bits().len();
         let num_memories = table.num_memories();
-        let input_comm = Pcs::read_commitment(vp, transcript)?;
+        let output_comm = Pcs::read_commitment(vp, transcript)?;
         let dim_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
 
         // read read_ts_comms & final_cts_comms & e_comms
@@ -46,7 +46,7 @@ impl<
         let final_cts_comms = Pcs::read_commitments(vp, num_chunks, transcript)?;
         let e_comms = Pcs::read_commitments(vp, num_memories, transcript)?;
         Ok(iter::empty()
-            .chain(vec![input_comm])
+            .chain(vec![output_comm])
             .chain(dim_comms)
             .chain(read_ts_comms)
             .chain(final_cts_comms)

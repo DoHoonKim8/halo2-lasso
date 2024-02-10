@@ -46,7 +46,7 @@ where
     pub(crate) num_instances: Vec<usize>,
     pub(crate) num_witness_polys: Vec<usize>,
     pub(crate) num_challenges: Vec<usize>,
-    /// assume we have at most Just One Lookup Table
+    /// (index expression, output expression, table info)
     pub(crate) lasso_lookup: Option<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
     pub(crate) lookup_polys_offset: usize,
     pub(crate) lookup_points_offset: usize,

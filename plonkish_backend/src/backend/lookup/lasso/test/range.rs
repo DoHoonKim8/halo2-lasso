@@ -235,8 +235,8 @@ mod test {
         let [pi, q_l, q_r, q_m, q_o, q_c, w_l, w_r, w_o] =
             &array::from_fn(|poly| Query::new(poly, Rotation::cur()))
                 .map(Expression::<F>::Polynomial);
-        let lasso_lookup_input = w_l.clone();
         let lasso_lookup_indices = w_l.clone();
+        let lasso_lookup_output = w_l.clone();
         let chunk_bits = table.chunk_bits();
         let num_vars = chunk_bits.iter().chain([&num_vars]).max().unwrap();
         PlonkishCircuitInfo {
@@ -247,7 +247,7 @@ mod test {
             num_challenges: vec![0],
             constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
             lookups: vec![vec![]],
-            lasso_lookup: Some((lasso_lookup_input, lasso_lookup_indices, table)),
+            lasso_lookup: Some((lasso_lookup_output, lasso_lookup_indices, table)),
             permutations,
             max_degree: Some(4),
         }

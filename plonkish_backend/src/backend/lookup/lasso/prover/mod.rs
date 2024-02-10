@@ -210,19 +210,19 @@ impl<
     fn e_polys(
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &[&MultilinearPolynomial<F>],
-        nz: &Vec<&[usize]>,
+        indices: &Vec<&[usize]>,
     ) -> Vec<MultilinearPolynomial<F>> {
         let num_chunks = table.chunk_bits().len();
         let num_memories = table.num_memories();
-        assert_eq!(nz.len(), num_chunks);
-        let num_reads = nz[0].len();
+        assert_eq!(indices.len(), num_chunks);
+        let num_reads = indices[0].len();
         (0..num_memories)
             .map(|i| {
                 let mut e_poly = Vec::with_capacity(num_reads);
                 let subtable_poly = subtable_polys[table.memory_to_subtable_index(i)];
-                let nz = nz[table.memory_to_chunk_index(i)];
+                let index = indices[table.memory_to_chunk_index(i)];
                 (0..num_reads).for_each(|j| {
-                    e_poly.push(subtable_poly[nz[j]]);
+                    e_poly.push(subtable_poly[index[j]]);
                 });
                 MultilinearPolynomial::new(e_poly)
             })
@@ -278,7 +278,7 @@ impl<
         lookup_opening_points: &mut Vec<Vec<F>>,
         lookup_opening_evals: &mut Vec<Evaluation<F>>,
         table: &Box<dyn DecomposableTable<F>>,
-        input_poly: &Poly<F>,
+        lookup_output_poly: &Poly<F>,
         e_polys: &[&Poly<F>],
         r: &[F],
         num_vars: usize,
@@ -286,7 +286,7 @@ impl<
     ) -> Result<(), Error> {
         Surge::<F, Pcs>::prove_sum_check(
             table,
-            input_poly,
+            lookup_output_poly,
             &e_polys,
             r,
             num_vars,
@@ -386,26 +386,26 @@ impl<
         lookup_polys_offset: usize,
         table: &Box<dyn DecomposableTable<F>>,
         subtable_polys: &[&MultilinearPolynomial<F>],
-        lookup_input_poly: MultilinearPolynomial<F>,
-        lookup_nz_poly: &MultilinearPolynomial<F>,
+        lookup_output_poly: MultilinearPolynomial<F>,
+        lookup_index_poly: &MultilinearPolynomial<F>,
         transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
     ) -> Result<(Vec<Vec<Poly<F>>>, Vec<Vec<Pcs::Commitment>>), Error> {
         let num_chunks = table.chunk_bits().len();
 
-        // commit to input_poly
-        let lookup_input_comm = Pcs::commit_and_write(&pp, &lookup_input_poly, transcript)?;
+        // commit to lookup_output_poly
+        let lookup_output_comm = Pcs::commit_and_write(&pp, &lookup_output_poly, transcript)?;
 
         // get surge and dims
         let mut surge = Surge::<F, Pcs>::new();
 
         // commit to dims
-        let dims = surge.commit(&table, lookup_nz_poly);
+        let dims = surge.commit(&table, lookup_index_poly);
         let dim_comms = Pcs::batch_commit_and_write(pp, &dims, transcript)?;
 
         // get e_polys & read_ts_polys & final_cts_polys
         let e_polys = {
-            let nz = surge.nz();
-            LassoProver::<F, Pcs>::e_polys(&table, subtable_polys, &nz)
+            let indices = surge.indices();
+            LassoProver::<F, Pcs>::e_polys(&table, subtable_polys, &indices)
         };
         let (read_ts_polys, final_cts_polys) = surge.counter_polys(&table);
 
@@ -414,9 +414,9 @@ impl<
         let final_cts_comms = Pcs::batch_commit_and_write(&pp, &final_cts_polys, transcript)?;
         let e_comms = Pcs::batch_commit_and_write(&pp, e_polys.as_slice(), transcript)?;
 
-        let lookup_input_poly = Poly {
+        let lookup_output_poly = Poly {
             offset: lookup_polys_offset,
-            poly: lookup_input_poly,
+            poly: lookup_output_poly,
         };
 
         let dims = dims
@@ -457,14 +457,14 @@ impl<
 
         Ok((
             vec![
-                vec![lookup_input_poly],
+                vec![lookup_output_poly],
                 dims,
                 read_ts_polys,
                 final_cts_polys,
                 e_polys,
             ],
             vec![
-                vec![lookup_input_comm],
+                vec![lookup_output_comm],
                 dim_comms,
                 read_ts_comms,
                 final_cts_comms,

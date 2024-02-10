@@ -46,7 +46,7 @@ impl<
         }
     }
 
-    pub fn nz(&'_ self) -> Vec<&[usize]> {
+    pub fn indices(&'_ self) -> Vec<&[usize]> {
         self.lookup_indices
             .iter()
             .map(|lookup_indices| lookup_indices.as_slice())
@@ -57,17 +57,17 @@ impl<
     pub fn commit(
         &mut self,
         table: &Box<dyn DecomposableTable<F>>,
-        nz_poly: &MultilinearPolynomial<F>,
+        index_poly: &MultilinearPolynomial<F>,
     ) -> Vec<MultilinearPolynomial<F>> {
-        let num_rows: usize = 1 << nz_poly.num_vars();
+        let num_rows: usize = 1 << index_poly.num_vars();
         let num_chunks = table.chunk_bits().len();
         // get indices of non-zero columns of all rows where each index is chunked
         let indices = (0..num_rows)
             .map(|i| {
-                let mut index_bits = fe_to_bits_le(nz_poly[i]);
+                let mut index_bits = fe_to_bits_le(index_poly[i]);
                 index_bits.truncate(table.chunk_bits().iter().sum());
                 assert_eq!(
-                    usize_from_bits_le(&fe_to_bits_le(nz_poly[i])),
+                    usize_from_bits_le(&fe_to_bits_le(index_poly[i])),
                     usize_from_bits_le(&index_bits)
                 );
 
@@ -134,7 +134,7 @@ impl<
 
     pub fn prove_sum_check(
         table: &Box<dyn DecomposableTable<F>>,
-        input_poly: &Poly<F>,
+        lookup_output_poly: &Poly<F>,
         e_polys: &[&Poly<F>],
         r: &[F],
         num_vars: usize,
@@ -144,7 +144,7 @@ impl<
         transcript: &mut impl TranscriptWrite<CommitmentChunk<F, Pcs>, F>,
     ) -> Result<(), Error> {
         let claimed_sum = Self::sum_check_claim(&r, &table, &e_polys);
-        assert_eq!(claimed_sum, input_poly.evaluate(r));
+        assert_eq!(claimed_sum, lookup_output_poly.evaluate(r));
 
         transcript.write_field_element(&claimed_sum)?;
 
@@ -179,7 +179,7 @@ impl<
                 )
             })
             .chain([Evaluation::new(
-                input_poly.offset,
+                lookup_output_poly.offset,
                 points_offset,
                 claimed_sum,
             )])
