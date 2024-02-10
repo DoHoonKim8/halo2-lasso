@@ -29,7 +29,6 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
 
     fn subtable_polys(&self) -> Vec<MultilinearPolynomial<F>> {
         let memory_size = 1 << 16;
-        println!("{}", self.num_memories());
         let mut evals = vec![];
         (0..memory_size).for_each(|i| {
             let (lhs, rhs) = split_bits(i, 8);
@@ -40,12 +39,12 @@ impl<F: PrimeField> DecomposableTable<F> for AndTable<F> {
     }
 
     fn subtable_polys_terms(&self) -> Vec<MultilinearPolynomialTerms<F>> {
-        let init = Prod(vec![Var(0), Var(16)]);
+        let init = Prod(vec![Var(0), Var(8)]);
         let mut terms = vec![init];
-        (1..16).for_each(|i| {
-            let coeff = Pow(Box::new(Const(F::from(2))), i as u32);
+        (1..8).for_each(|i| {
+            let coeff = Const(F::from(1 << i));
             let x = Var(i);
-            let y = Var(i + 16);
+            let y = Var(i + 8);
             let term = Prod(vec![coeff, x, y]);
             terms.push(term);
         });

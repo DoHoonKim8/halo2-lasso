@@ -6,7 +6,7 @@ use itertools::{chain, Itertools};
 use crate::{
     pcs::Evaluation,
     piop::gkr::verify_grand_product,
-    poly::multilinear::{MultilinearPolynomial, MultilinearPolynomialTerms},
+    poly::multilinear::MultilinearPolynomialTerms,
     util::{arithmetic::inner_product, transcript::FieldTranscriptRead},
     Error,
 };
@@ -98,20 +98,14 @@ impl<F: PrimeField> Chunk<F> {
 #[derive(Clone, Debug)]
 pub(in crate::backend::lookup::lasso) struct Memory<F> {
     memory_index: usize,
-    subtable_poly: MultilinearPolynomial<F>,
     subtable_poly_new: MultilinearPolynomialTerms<F>,
 }
 
 impl<F> Memory<F> {
-    pub fn new(
-        memory_index: usize,
-        subtable_poly: MultilinearPolynomial<F>,
-        s: MultilinearPolynomialTerms<F>,
-    ) -> Self {
+    pub fn new(memory_index: usize, subtable_poly: MultilinearPolynomialTerms<F>) -> Self {
         Self {
             memory_index,
-            subtable_poly,
-            subtable_poly_new: s,
+            subtable_poly_new: subtable_poly,
         }
     }
 }

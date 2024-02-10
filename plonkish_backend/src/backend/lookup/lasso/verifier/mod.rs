@@ -104,16 +104,14 @@ impl<
     fn chunks(table: &Box<dyn DecomposableTable<F>>) -> Vec<Chunk<F>> {
         let num_memories = table.num_memories();
         let chunk_bits = table.chunk_bits();
-        let subtable_polys = table.subtable_polys();
         let s_new = table.subtable_polys_terms();
         // key: chunk index, value: chunk
         let mut chunk_map: HashMap<usize, Chunk<F>> = HashMap::new();
         (0..num_memories).for_each(|memory_index| {
             let chunk_index = table.memory_to_chunk_index(memory_index);
             let chunk_bits = chunk_bits[chunk_index];
-            let subtable_poly = &subtable_polys[table.memory_to_subtable_index(memory_index)];
             let s = &s_new[table.memory_to_subtable_index(memory_index)];
-            let memory = Memory::new(memory_index, subtable_poly.clone(), s.clone());
+            let memory = Memory::new(memory_index, s.clone());
             if chunk_map.get(&chunk_index).is_some() {
                 chunk_map.entry(chunk_index).and_modify(|chunk| {
                     chunk.add_memory(memory);
