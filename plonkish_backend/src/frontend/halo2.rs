@@ -21,7 +21,6 @@ use std::{
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod circuit;
-pub mod lookup;
 
 #[cfg(test)]
 mod test;
