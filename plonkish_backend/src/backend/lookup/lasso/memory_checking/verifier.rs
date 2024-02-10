@@ -84,7 +84,7 @@ impl<F: PrimeField> Chunk<F> {
                 write_xs[i],
                 hash(&dim_x, &e_poly_xs[i], &(read_ts_poly_x + F::ONE))
             );
-            let subtable_poly_y = memory.subtable_poly_new.evaluate(y);
+            let subtable_poly_y = memory.subtable_poly.evaluate(y);
             assert_eq!(init_ys[i], hash(&id_poly_y, &subtable_poly_y, &F::ZERO));
             assert_eq!(
                 final_read_ys[i],
@@ -98,14 +98,14 @@ impl<F: PrimeField> Chunk<F> {
 #[derive(Clone, Debug)]
 pub(in crate::backend::lookup::lasso) struct Memory<F> {
     memory_index: usize,
-    subtable_poly_new: MultilinearPolynomialTerms<F>,
+    subtable_poly: MultilinearPolynomialTerms<F>,
 }
 
 impl<F> Memory<F> {
     pub fn new(memory_index: usize, subtable_poly: MultilinearPolynomialTerms<F>) -> Self {
         Self {
             memory_index,
-            subtable_poly_new: subtable_poly,
+            subtable_poly,
         }
     }
 }
