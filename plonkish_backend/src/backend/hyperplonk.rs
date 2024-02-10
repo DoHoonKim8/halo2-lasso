@@ -48,7 +48,10 @@ where
     pub(crate) num_challenges: Vec<usize>,
     /// (index expression, output expression, table info)
     pub(crate) lasso_lookup: Option<(Expression<F>, Expression<F>, Box<dyn DecomposableTable<F>>)>,
+    /// offset of polynomials related to Lasso lookup in batch opening
+    /// Lasso polynomials are tracked separately since Lasso invokes separate sumcheck
     pub(crate) lookup_polys_offset: usize,
+    /// offset of points at which polynomials related to Lasso lookup opened in batch opening
     pub(crate) lookup_points_offset: usize,
     pub(crate) num_permutation_z_polys: usize,
     pub(crate) num_vars: usize,
