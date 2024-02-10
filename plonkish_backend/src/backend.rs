@@ -18,6 +18,8 @@ pub mod lookup;
 
 pub trait PlonkishBackend<F: Field>: Clone + Debug {
     type Pcs: PolynomialCommitmentScheme<F>;
+    // FIXME : Add Serialize + DeserializeOwned later, currently removed as a shortcut
+    // to skip implementing those traits on Lasso related type
     type ProverParam: Clone + Debug;
     type VerifierParam: Clone + Debug;
 
