@@ -147,13 +147,13 @@ mod test {
         mut witness_rng: impl RngCore,
     ) -> (PlonkishCircuitInfo<F>, impl PlonkishCircuit<F>) {
         let size = 1 << num_vars;
-        let mut polys = [(); 9].map(|_| vec![F::ZERO; size]);
+        let mut polys = [(); 5].map(|_| vec![F::ZERO; size]);
 
         let instances = rand_vec(num_vars, &mut witness_rng);
         polys[0] = instance_polys(num_vars, [&instances])[0].evals().to_vec();
 
         let mut permutation = Permutation::default();
-        for poly in [6, 7, 8] {
+        for poly in [2, 3, 4] {
             permutation.copy((poly, 1), (poly, 1));
         }
         for idx in 0..size - 1 {
@@ -161,12 +161,12 @@ mod test {
             let [w_l, w_r, w_o] = if use_copy {
                 let [l_copy_idx, r_copy_idx] = [(); 2].map(|_| {
                     (
-                        rand_idx(6..9, &mut preprocess_rng),
+                        rand_idx(2..5, &mut preprocess_rng),
                         rand_idx(1..idx, &mut preprocess_rng),
                     )
                 });
-                permutation.copy(l_copy_idx, (6, idx));
-                permutation.copy(r_copy_idx, (7, idx));
+                permutation.copy(l_copy_idx, (2, idx));
+                permutation.copy(r_copy_idx, (3, idx));
                 let w_l = polys[l_copy_idx.0][l_copy_idx.1];
                 let w_r = polys[r_copy_idx.0][r_copy_idx.1];
                 let w_o = usize_from_bits_le(&fe_to_bits_le(w_l))
@@ -179,36 +179,22 @@ mod test {
                 [F::from(w_l), F::from(w_r), F::from(w_o)]
             };
 
-            let q_c = F::random(&mut preprocess_rng);
-            let values = if preprocess_rng.next_u32().is_even() {
-                vec![
-                    (1, F::ONE),
-                    (2, F::ONE),
-                    (4, -F::ONE),
-                    (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_o),
-                ]
-            } else {
-                vec![
-                    (3, F::ONE),
-                    (4, -F::ONE),
-                    (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_o),
-                ]
-            };
+            let q_and = F::ONE;
+            let values = vec![
+                (1, q_and),
+                (2, w_l),
+                (3, w_r),
+                (4, w_o),
+            ];
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
         }
-        let [_, q_l, q_r, q_m, q_o, q_c, w_l, w_r, w_o] = polys;
+        let [_, q_and, w_l, w_r, w_o] = polys;
         let circuit_info = lasso_lookup_circuit_info(
             num_vars,
             instances.len(),
-            [q_l, q_r, q_m, q_o, q_c],
+            [q_and],
             table,
             permutation.into_cycles(),
         );
@@ -221,11 +207,11 @@ mod test {
     fn lasso_lookup_circuit_info<F: PrimeField>(
         num_vars: usize,
         num_instances: usize,
-        preprocess_polys: [Vec<F>; 5],
+        preprocess_polys: [Vec<F>; 1],
         table: Box<dyn DecomposableTable<F>>,
         permutations: Vec<Vec<(usize, usize)>>,
     ) -> PlonkishCircuitInfo<F> {
-        let [_, _, _, _, _, _, w_l, w_r, w_o] =
+        let [_, q_and, w_l, w_r, w_o] =
             &array::from_fn(|poly| Query::new(poly, Rotation::cur()))
                 .map(Expression::<F>::Polynomial);
         let lasso_lookup_indices = Expression::DistributePowers(
@@ -243,7 +229,7 @@ mod test {
             num_challenges: vec![0],
             constraints: vec![],
             lookups: vec![vec![]],
-            lasso_lookup: Some((lasso_lookup_indices, lasso_lookup_output, table)),
+            lasso_lookup: Some((q_and * lasso_lookup_indices, q_and * lasso_lookup_output, table)),
             permutations,
             max_degree: Some(4),
         }

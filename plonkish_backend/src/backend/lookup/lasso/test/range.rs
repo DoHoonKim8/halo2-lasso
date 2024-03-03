@@ -167,55 +167,59 @@ mod test {
         mut witness_rng: impl RngCore,
     ) -> (PlonkishCircuitInfo<F>, impl PlonkishCircuit<F>) {
         let size = 1 << num_vars;
-        let mut polys = [(); 9].map(|_| vec![F::ZERO; size]);
+        let mut polys = [(); 10].map(|_| vec![F::ZERO; size]);
 
         let instances = rand_vec(num_vars, &mut witness_rng);
         polys[0] = instance_polys(num_vars, [&instances])[0].evals().to_vec();
 
         let mut permutation = Permutation::default();
-        for poly in [6, 7, 8] {
+        for poly in [7, 8, 9] {
             permutation.copy((poly, 1), (poly, 1));
         }
         for idx in 0..size - 1 {
             let w_l = if preprocess_rng.next_u32().is_even() && idx > 1 {
-                let l_copy_idx = (6, rand_idx(1..idx, &mut preprocess_rng));
-                permutation.copy(l_copy_idx, (6, idx));
+                let l_copy_idx = (7, rand_idx(1..idx, &mut preprocess_rng));
+                permutation.copy(l_copy_idx, (7, idx));
                 polys[l_copy_idx.0][l_copy_idx.1]
             } else {
                 let value = witness_rng.next_u64() as usize;
-                F::from_u128(value.pow(2) as u128)
+                F::from_u128(value.pow(2) as u128);
+                F::from(value as u64).square()
             };
             let w_r = F::from(witness_rng.next_u64());
             let q_c = F::random(&mut preprocess_rng);
+            let q_range = F::ONE;
             let values = if preprocess_rng.next_u32().is_even() {
                 vec![
                     (1, F::ONE),
                     (2, F::ONE),
                     (4, -F::ONE),
                     (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_l + w_r + q_c + polys[0][idx]),
+                    (6, q_range),
+                    (7, w_l),
+                    (8, w_r),
+                    (9, w_l + w_r + q_c + polys[0][idx]),
                 ]
             } else {
                 vec![
                     (3, F::ONE),
                     (4, -F::ONE),
                     (5, q_c),
-                    (6, w_l),
-                    (7, w_r),
-                    (8, w_l * w_r + q_c + polys[0][idx]),
+                    (6, q_range),
+                    (7, w_l),
+                    (8, w_r),
+                    (9, w_l * w_r + q_c + polys[0][idx]),
                 ]
             };
             for (poly, value) in values {
                 polys[poly][idx] = value;
             }
         }
-        let [_, q_l, q_r, q_m, q_o, q_c, w_l, w_r, w_o] = polys;
+        let [_, q_l, q_r, q_m, q_o, q_c, q_range, w_l, w_r, w_o] = polys;
         let circuit_info = vanilla_plonk_with_lasso_lookup_circuit_info(
             num_vars,
             instances.len(),
-            [q_l, q_r, q_m, q_o, q_c],
+            [q_l, q_r, q_m, q_o, q_c, q_range],
             table,
             permutation.into_cycles(),
         );
@@ -228,11 +232,11 @@ mod test {
     fn vanilla_plonk_with_lasso_lookup_circuit_info<F: PrimeField>(
         num_vars: usize,
         num_instances: usize,
-        preprocess_polys: [Vec<F>; 5],
+        preprocess_polys: [Vec<F>; 6],
         table: Box<dyn DecomposableTable<F>>,
         permutations: Vec<Vec<(usize, usize)>>,
     ) -> PlonkishCircuitInfo<F> {
-        let [pi, q_l, q_r, q_m, q_o, q_c, w_l, w_r, w_o] =
+        let [pi, q_l, q_r, q_m, q_o, q_c, q_range, w_l, w_r, w_o] =
             &array::from_fn(|poly| Query::new(poly, Rotation::cur()))
                 .map(Expression::<F>::Polynomial);
         let lasso_lookup_indices = w_l.clone();
@@ -247,7 +251,7 @@ mod test {
             num_challenges: vec![0],
             constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
             lookups: vec![vec![]],
-            lasso_lookup: Some((lasso_lookup_output, lasso_lookup_indices, table)),
+            lasso_lookup: Some((q_range * lasso_lookup_output, q_range * lasso_lookup_indices, table)),
             permutations,
             max_degree: Some(4),
         }
