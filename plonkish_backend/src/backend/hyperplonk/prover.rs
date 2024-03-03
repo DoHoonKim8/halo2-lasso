@@ -4,30 +4,29 @@ use crate::{
             verifier::{pcs_query, point_offset, points},
             HyperPlonk,
         },
+        lookup::lasso::prover::LassoProver,
         WitnessEncoding,
     },
-    pcs::Evaluation,
+    pcs::{Evaluation, PolynomialCommitmentScheme},
     piop::sum_check::{
         classic::{ClassicSumCheck, EvaluationsProver},
         SumCheck, VirtualPolynomial,
     },
-    poly::{multilinear::MultilinearPolynomial, Polynomial},
+    poly::multilinear::MultilinearPolynomial,
     util::{
-        arithmetic::{div_ceil, steps_by, sum, BatchInvert, BooleanHypercube, PrimeField},
+        arithmetic::{div_ceil, steps_by, BatchInvert, BooleanHypercube, PrimeField},
         end_timer,
-        expression::{CommonPolynomial, Expression, Rotation},
-        parallel::{num_threads, par_map_collect, parallelize, parallelize_iter},
+        expression::{Expression, Rotation},
+        parallel::{par_map_collect, parallelize},
         start_timer,
-        transcript::FieldTranscriptWrite,
+        transcript::{FieldTranscriptWrite, TranscriptWrite},
         Itertools,
     },
     Error,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    iter,
-};
+use std::iter;
+
+use super::HyperPlonkProverParam;
 
 pub(crate) fn instance_polys<'a, F: PrimeField>(
     num_vars: usize,
@@ -45,208 +44,6 @@ pub(crate) fn instance_polys<'a, F: PrimeField>(
         })
         .map(MultilinearPolynomial::new)
         .collect()
-}
-
-pub(crate) fn lookup_compressed_polys<F: PrimeField>(
-    lookups: &[Vec<(Expression<F>, Expression<F>)>],
-    polys: &[&MultilinearPolynomial<F>],
-    challenges: &[F],
-    betas: &[F],
-) -> Vec<[MultilinearPolynomial<F>; 2]> {
-    if lookups.is_empty() {
-        return Default::default();
-    }
-
-    let num_vars = polys[0].num_vars();
-    let expression = lookups
-        .iter()
-        .flat_map(|lookup| lookup.iter().map(|(input, table)| (input + table)))
-        .sum::<Expression<_>>();
-    let lagranges = {
-        let bh = BooleanHypercube::new(num_vars).iter().collect_vec();
-        expression
-            .used_langrange()
-            .into_iter()
-            .map(|i| (i, bh[i.rem_euclid(1 << num_vars) as usize]))
-            .collect::<HashSet<_>>()
-    };
-    lookups
-        .iter()
-        .map(|lookup| lookup_compressed_poly(lookup, &lagranges, polys, challenges, betas))
-        .collect()
-}
-
-pub(super) fn lookup_compressed_poly<F: PrimeField>(
-    lookup: &[(Expression<F>, Expression<F>)],
-    lagranges: &HashSet<(i32, usize)>,
-    polys: &[&MultilinearPolynomial<F>],
-    challenges: &[F],
-    betas: &[F],
-) -> [MultilinearPolynomial<F>; 2] {
-    let num_vars = polys[0].num_vars();
-    let bh = BooleanHypercube::new(num_vars);
-    let compress = |expressions: &[&Expression<F>]| {
-        betas
-            .iter()
-            .copied()
-            .zip(expressions.iter().map(|expression| {
-                let mut compressed = vec![F::ZERO; 1 << num_vars];
-                parallelize(&mut compressed, |(compressed, start)| {
-                    for (b, compressed) in (start..).zip(compressed) {
-                        *compressed = expression.evaluate(
-                            &|constant| constant,
-                            &|common_poly| match common_poly {
-                                CommonPolynomial::Identity => F::from(b as u64),
-                                CommonPolynomial::Lagrange(i) => {
-                                    if lagranges.contains(&(i, b)) {
-                                        F::ONE
-                                    } else {
-                                        F::ZERO
-                                    }
-                                }
-                                CommonPolynomial::EqXY(_) => unreachable!(),
-                            },
-                            &|query| polys[query.poly()][bh.rotate(b, query.rotation())],
-                            &|challenge| challenges[challenge],
-                            &|value| -value,
-                            &|lhs, rhs| lhs + &rhs,
-                            &|lhs, rhs| lhs * &rhs,
-                            &|value, scalar| value * &scalar,
-                        );
-                    }
-                });
-                MultilinearPolynomial::new(compressed)
-            }))
-            .sum::<MultilinearPolynomial<_>>()
-    };
-
-    let (inputs, tables) = lookup
-        .iter()
-        .map(|(input, table)| (input, table))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
-
-    let timer = start_timer(|| "compressed_input_poly");
-    let compressed_input_poly = compress(&inputs);
-    end_timer(timer);
-
-    let timer = start_timer(|| "compressed_table_poly");
-    let compressed_table_poly = compress(&tables);
-    end_timer(timer);
-
-    [compressed_input_poly, compressed_table_poly]
-}
-
-pub(crate) fn lookup_m_polys<F: PrimeField + Hash>(
-    compressed_polys: &[[MultilinearPolynomial<F>; 2]],
-) -> Result<Vec<MultilinearPolynomial<F>>, Error> {
-    compressed_polys.iter().map(lookup_m_poly).try_collect()
-}
-
-pub(super) fn lookup_m_poly<F: PrimeField + Hash>(
-    compressed_polys: &[MultilinearPolynomial<F>; 2],
-) -> Result<MultilinearPolynomial<F>, Error> {
-    let [input, table] = compressed_polys;
-
-    let counts = {
-        let indice_map = table.iter().zip(0..).collect::<HashMap<_, usize>>();
-
-        let chunk_size = div_ceil(input.evals().len(), num_threads());
-        let num_chunks = div_ceil(input.evals().len(), chunk_size);
-        let mut counts = vec![HashMap::new(); num_chunks];
-        let mut valids = vec![true; num_chunks];
-        parallelize_iter(
-            counts
-                .iter_mut()
-                .zip(valids.iter_mut())
-                .zip((0..).step_by(chunk_size)),
-            |((count, valid), start)| {
-                for input in input[start..].iter().take(chunk_size) {
-                    if let Some(idx) = indice_map.get(input) {
-                        count
-                            .entry(*idx)
-                            .and_modify(|count| *count += 1)
-                            .or_insert(1);
-                    } else {
-                        *valid = false;
-                        break;
-                    }
-                }
-            },
-        );
-        if valids.iter().any(|valid| !valid) {
-            return Err(Error::InvalidSnark("Invalid lookup input".to_string()));
-        }
-        counts
-    };
-
-    let mut m = vec![0; 1 << input.num_vars()];
-    for (idx, count) in counts.into_iter().flatten() {
-        m[idx] += count;
-    }
-    let m = par_map_collect(m, |count| match count {
-        0 => F::ZERO,
-        1 => F::ONE,
-        count => F::from(count),
-    });
-    Ok(MultilinearPolynomial::new(m))
-}
-
-pub(super) fn lookup_h_polys<F: PrimeField + Hash>(
-    compressed_polys: &[[MultilinearPolynomial<F>; 2]],
-    m_polys: &[MultilinearPolynomial<F>],
-    gamma: &F,
-) -> Vec<MultilinearPolynomial<F>> {
-    compressed_polys
-        .iter()
-        .zip(m_polys.iter())
-        .map(|(compressed_polys, m_poly)| lookup_h_poly(compressed_polys, m_poly, gamma))
-        .collect()
-}
-
-pub(super) fn lookup_h_poly<F: PrimeField + Hash>(
-    compressed_polys: &[MultilinearPolynomial<F>; 2],
-    m_poly: &MultilinearPolynomial<F>,
-    gamma: &F,
-) -> MultilinearPolynomial<F> {
-    let [input, table] = compressed_polys;
-    let mut h_input = vec![F::ZERO; 1 << input.num_vars()];
-    let mut h_table = vec![F::ZERO; 1 << input.num_vars()];
-
-    parallelize(&mut h_input, |(h_input, start)| {
-        for (h_input, input) in h_input.iter_mut().zip(input[start..].iter()) {
-            *h_input = *gamma + input;
-        }
-    });
-    parallelize(&mut h_table, |(h_table, start)| {
-        for (h_table, table) in h_table.iter_mut().zip(table[start..].iter()) {
-            *h_table = *gamma + table;
-        }
-    });
-
-    let chunk_size = div_ceil(2 * h_input.len(), num_threads());
-    parallelize_iter(
-        iter::empty()
-            .chain(h_input.chunks_mut(chunk_size))
-            .chain(h_table.chunks_mut(chunk_size)),
-        |h| {
-            h.iter_mut().batch_invert();
-        },
-    );
-
-    parallelize(&mut h_input, |(h_input, start)| {
-        for (h_input, (h_table, m)) in h_input
-            .iter_mut()
-            .zip(h_table[start..].iter().zip(m_poly[start..].iter()))
-        {
-            *h_input -= *h_table * m;
-        }
-    });
-
-    if cfg!(feature = "sanity-check") {
-        assert_eq!(sum::<F>(&h_input), F::ZERO);
-    }
-
-    MultilinearPolynomial::new(h_input)
 }
 
 pub(crate) fn permutation_z_polys<F: PrimeField>(
@@ -406,4 +203,90 @@ pub(crate) fn prove_sum_check<F: PrimeField>(
     transcript.write_field_elements(evals.iter().map(Evaluation::value))?;
 
     Ok((points(&pcs_query, &x), evals))
+}
+
+pub(super) fn prove_lasso_lookup<
+    F: PrimeField,
+    Pcs: PolynomialCommitmentScheme<F, Polynomial = MultilinearPolynomial<F>>,
+>(
+    pp: &HyperPlonkProverParam<F, Pcs>,
+    polys: &[&MultilinearPolynomial<F>],
+    lookup_opening_points: &mut Vec<Vec<F>>,
+    lookup_opening_evals: &mut Vec<Evaluation<F>>,
+    transcript: &mut impl TranscriptWrite<Pcs::CommitmentChunk, F>,
+) -> Result<(Vec<MultilinearPolynomial<F>>, Vec<Pcs::Commitment>, Vec<F>), Error> {
+    if pp.lasso_lookup.is_none() {
+        return Ok((vec![], vec![], vec![]));
+    }
+    let lasso_lookup = pp.lasso_lookup.as_ref().unwrap();
+    let (lookup, table) = ((&lasso_lookup.0, &lasso_lookup.1), &lasso_lookup.2);
+    let (lookup_index_poly, lookup_output_poly) = LassoProver::<F, Pcs>::lookup_poly(&lookup, &polys);
+
+    let num_vars = lookup_output_poly.num_vars();
+
+    // get subtable_polys
+    let subtable_polys = table.subtable_polys();
+    let subtable_polys = subtable_polys.iter().collect_vec();
+    let subtable_polys = subtable_polys.as_slice();
+
+    let (lookup_polys, lookup_comms) = LassoProver::<F, Pcs>::commit(
+        &pp.pcs,
+        pp.lookup_polys_offset,
+        &table,
+        subtable_polys,
+        lookup_output_poly,
+        &lookup_index_poly,
+        transcript,
+    )?;
+
+    // Round n
+    // squeeze `r`
+    let r = transcript.squeeze_challenges(num_vars);
+
+    let (lookup_output_poly, dims, read_ts_polys, final_cts_polys, e_polys) = (
+        &lookup_polys[0][0],
+        &lookup_polys[1],
+        &lookup_polys[2],
+        &lookup_polys[3],
+        &lookup_polys[4],
+    );
+    // Lasso Sumcheck
+    LassoProver::<F, Pcs>::prove_sum_check(
+        pp.lookup_points_offset,
+        lookup_opening_points,
+        lookup_opening_evals,
+        &table,
+        lookup_output_poly,
+        &e_polys.iter().collect_vec(),
+        &r,
+        num_vars,
+        transcript,
+    )?;
+
+    // squeeze memory checking challenges -> we will reuse beta, gamma for memory checking of Lasso
+    // Round n+1
+    let [beta, gamma] = transcript.squeeze_challenges(2).try_into().unwrap();
+
+    // memory_checking
+    LassoProver::<F, Pcs>::memory_checking(
+        pp.lookup_points_offset,
+        lookup_opening_points,
+        lookup_opening_evals,
+        table,
+        subtable_polys,
+        dims,
+        read_ts_polys,
+        final_cts_polys,
+        e_polys,
+        &beta,
+        &gamma,
+        transcript,
+    )?;
+
+    let lookup_polys = lookup_polys
+        .into_iter()
+        .flat_map(|lookup_polys| lookup_polys.into_iter().map(|poly| poly.poly).collect_vec())
+        .collect_vec();
+    let lookup_comms = lookup_comms.concat();
+    Ok((lookup_polys, lookup_comms, vec![beta, gamma]))
 }

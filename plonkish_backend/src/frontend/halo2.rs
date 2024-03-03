@@ -21,6 +21,7 @@ use std::{
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod circuit;
+
 #[cfg(test)]
 mod test;
 
@@ -155,6 +156,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
             num_challenges: num_by_phase(&cs.challenge_phase()),
             constraints,
             lookups,
+            lasso_lookup: None,
             permutations,
             max_degree: Some(cs.degree::<false>()),
         })

@@ -2,17 +2,14 @@ use crate::{
     backend::{
         hyperplonk::{
             preprocessor::{compose, permutation_polys},
-            prover::{
-                instance_polys, lookup_compressed_polys, lookup_h_polys, lookup_m_polys,
-                permutation_z_polys,
-            },
+            prover::{instance_polys, permutation_z_polys},
         },
         mock::MockCircuit,
         PlonkishCircuit, PlonkishCircuitInfo,
     },
     poly::{multilinear::MultilinearPolynomial, Polynomial},
     util::{
-        arithmetic::{powers, BooleanHypercube, PrimeField},
+        arithmetic::{BooleanHypercube, PrimeField},
         expression::{Expression, Query, Rotation},
         test::{rand_array, rand_idx, rand_vec},
         Itertools,
@@ -42,7 +39,8 @@ pub fn vanilla_plonk_circuit_info<F: PrimeField>(
         num_witness_polys: vec![3],
         num_challenges: vec![0],
         constraints: vec![q_l * w_l + q_r * w_r + q_m * w_l * w_r + q_o * w_o + q_c + pi],
-        lookups: Vec::new(),
+        lookups: vec![],
+        lasso_lookup: None,
         permutations,
         max_degree: Some(4),
     }
@@ -80,6 +78,7 @@ pub fn vanilla_plonk_with_lookup_circuit_info<F: PrimeField>(
             (q_lookup * w_r, t_r.clone()),
             (q_lookup * w_o, t_o.clone()),
         ]],
+        lasso_lookup: None,
         permutations,
         max_degree: Some(4),
     }
@@ -338,17 +337,6 @@ pub fn rand_vanilla_plonk_with_lookup_assignment<F: PrimeField + Hash>(
     let challenges: [_; 3] = rand_array(&mut witness_rng);
     let [beta, gamma, _] = challenges;
 
-    let (lookup_compressed_polys, lookup_m_polys) = {
-        let PlonkishCircuitInfo { lookups, .. } =
-            vanilla_plonk_with_lookup_circuit_info(0, 0, Default::default(), Vec::new());
-        let betas = powers(beta).take(3).collect_vec();
-        let lookup_compressed_polys =
-            lookup_compressed_polys(&lookups, &polys.iter().collect_vec(), &[], &betas);
-        let lookup_m_polys = lookup_m_polys(&lookup_compressed_polys).unwrap();
-        (lookup_compressed_polys, lookup_m_polys)
-    };
-    let lookup_h_polys = lookup_h_polys(&lookup_compressed_polys, &lookup_m_polys, &gamma);
-
     let permutation_polys = permutation_polys(num_vars, &[10, 11, 12], &permutations);
     let permutation_z_polys = permutation_z_polys(
         1,
@@ -365,8 +353,6 @@ pub fn rand_vanilla_plonk_with_lookup_assignment<F: PrimeField + Hash>(
         iter::empty()
             .chain(polys)
             .chain(permutation_polys)
-            .chain(lookup_m_polys)
-            .chain(lookup_h_polys)
             .chain(permutation_z_polys)
             .collect_vec(),
         challenges.to_vec(),

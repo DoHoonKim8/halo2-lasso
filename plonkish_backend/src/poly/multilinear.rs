@@ -1,21 +1,73 @@
 use crate::{
     poly::Polynomial,
     util::{
-        arithmetic::{div_ceil, usize_from_bits_le, BooleanHypercube, Field},
+        arithmetic::{div_ceil, fe_from_le_bytes, usize_from_bits_le, BooleanHypercube, Field},
         expression::Rotation,
         impl_index,
         parallel::{num_threads, parallelize, parallelize_iter},
         BitIndex, Deserialize, Itertools, Serialize,
     },
 };
+use halo2_curves::ff::PrimeField;
 use num_integer::Integer;
 use rand::RngCore;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     borrow::Cow,
     iter::{self, Sum},
     mem,
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+
+/// Multilinear polynomials are represented as expressions
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct MultilinearPolynomialTerms<F> {
+    num_vars: usize,
+    expression: PolyExpr<F>,
+}
+
+impl<F> MultilinearPolynomialTerms<F> {
+    pub fn new(num_vars: usize, expression: PolyExpr<F>) -> Self {
+        Self {
+            num_vars,
+            expression,
+        }
+    }
+}
+
+impl<F: Field> MultilinearPolynomialTerms<F> {
+    pub fn evaluate(&self, x: &[F]) -> F {
+        assert_eq!(x.len(), self.num_vars);
+        self.expression.evaluate(x)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum PolyExpr<F> {
+    Const(F),
+    Var(usize),
+    Sum(Vec<PolyExpr<F>>),
+    Prod(Vec<PolyExpr<F>>),
+    Pow(Box<PolyExpr<F>>, u32),
+}
+
+impl<F: Field> PolyExpr<F> {
+    fn evaluate(&self, x: &[F]) -> F {
+        match self {
+            PolyExpr::Const(c) => c.clone(),
+            PolyExpr::Var(i) => x[*i],
+            PolyExpr::Sum(v) => v
+                .par_iter()
+                .map(|t| t.evaluate(x))
+                .reduce(|| F::ZERO, |acc, f| acc + f),
+            PolyExpr::Prod(v) => v
+                .par_iter()
+                .map(|t| t.evaluate(x))
+                .reduce(|| F::ONE, |acc, f| acc * f),
+            PolyExpr::Pow(inner, e) => inner.evaluate(x).pow([*e as u64]),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultilinearPolynomial<F> {
@@ -59,6 +111,16 @@ impl<F> MultilinearPolynomial<F> {
 
     pub fn iter(&self) -> impl Iterator<Item = &F> {
         self.evals.iter()
+    }
+}
+
+impl<F: PrimeField> MultilinearPolynomial<F> {
+    pub fn from_usize(evals: Vec<usize>) -> Self {
+        let evals = evals
+            .iter()
+            .map(|eval| fe_from_le_bytes(eval.to_le_bytes()))
+            .collect_vec();
+        Self::new(evals)
     }
 }
 

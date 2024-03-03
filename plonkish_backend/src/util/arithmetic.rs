@@ -186,12 +186,50 @@ pub fn usize_from_bits_le(bits: &[bool]) -> usize {
         .fold(0, |int, bit| (int << 1) + (*bit as usize))
 }
 
+pub fn fe_to_bits_le<F: PrimeField>(fe: F) -> Vec<bool> {
+    let repr = fe.to_repr();
+    let bytes = repr.as_ref();
+    bytes
+        .iter()
+        .flat_map(|byte| {
+            let value = u8::from_le(*byte);
+            let mut bits = vec![];
+            for i in 0..8 {
+                let mask = 1 << i;
+                bits.push(value & mask > 0);
+            }
+            bits
+        })
+        .collect_vec()
+}
+
 pub fn div_rem(dividend: usize, divisor: usize) -> (usize, usize) {
     Integer::div_rem(&dividend, &divisor)
 }
 
 pub fn div_ceil(dividend: usize, divisor: usize) -> usize {
     Integer::div_ceil(&dividend, &divisor)
+}
+
+pub fn split_bits(item: usize, num_bits: usize) -> (usize, usize) {
+    let max_value = (1 << num_bits) - 1; // Calculate the maximum value that can be represented with num_bits
+
+    let low_chunk = item & max_value; // Extract the lower bits
+    let high_chunk = (item >> num_bits) & max_value; // Shift the item to the right and extract the next set of bits
+
+    (high_chunk, low_chunk)
+}
+
+pub fn split_by_chunk_bits(bits: &[bool], chunk_bits: &[usize]) -> Vec<Vec<bool>> {
+    let mut offset = 0;
+    let mut chunked_bits = vec![];
+    chunk_bits.iter().for_each(|chunk_bits| {
+        let mut chunked = vec![true; *chunk_bits];
+        chunked.copy_from_slice(&bits[offset..offset + chunk_bits]);
+        chunked_bits.push(chunked);
+        offset = offset + chunk_bits;
+    });
+    chunked_bits
 }
 
 #[cfg(test)]
